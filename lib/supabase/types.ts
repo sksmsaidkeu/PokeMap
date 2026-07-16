@@ -323,18 +323,21 @@ export type Database = {
         Row: {
           color: string
           id: number
+          is_endgame_area: boolean
           name: string
           province_id: number
         }
         Insert: {
           color: string
           id: number
+          is_endgame_area?: boolean
           name: string
           province_id: number
         }
         Update: {
           color?: string
           id?: number
+          is_endgame_area?: boolean
           name?: string
           province_id?: number
         }
