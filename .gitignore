@@ -1,0 +1,31 @@
+build_pokemon_db.py
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# 환경 변수 (secrets)
+.env
+.env.local
+.env.*.local
+
+# Supabase 로컬 아티팩트
+supabase/.branches/
+supabase/.temp/
+
+# Vercel
+.vercel/
+
+# Python (build_pokemon_db.py 실행 캐시)
+__pycache__/
+*.pyc
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code 로컬 설정 (개인 권한 등)
+.claude/settings.local.json
