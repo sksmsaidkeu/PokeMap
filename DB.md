@@ -7,7 +7,7 @@ Supabase(PostgreSQL 15+) 기준. 스키마는 `public`. 원본 자료: `PokeMap_
 | 게임 용어 | DB 엔티티 | 비고 |
 |---|---|---|
 | 포켓몬 지방 (관동/성도/…) | `pokemon_regions` | 8개, Pokedex 표시용 분류 |
-| 도 (서울/경기/…) | `provinces` | 17개, **지역 해금의 실제 단위** |
+| 도 (서울/경기/…) | `provinces` | 17개, 이동 제한 없는 지역 구분 단위(섬 지역만 예외) |
 | 생활권 | `living_areas` | 도 내부 세부 권역, 스폰 풀의 단위 |
 | 시/군/구 | `cities` | 이동 최소 단위 |
 | 등급(몬스터볼~마스터볼) | `v_user_tier` (뷰) | 유저 전체 포획률 기반, 별도 테이블 없음 |
@@ -47,7 +47,7 @@ erDiagram
 | `pokemon_species` | 포켓몬 마스터(pokemon.csv) | 시드 전용 |
 | `region_spawn_pool` | 생활권별 출현 포켓몬 배정 | 시드 전용 |
 | `user_progress` | 유저 현재 위치(GPS 온보딩으로 초기화) | Edge Function |
-| `user_province_unlocks` | 유저별 도 해금 상태 | Edge Function |
+| `user_province_unlocks` | 유저별 섬 지역(최종 히든) 해금 상태, 육지 도는 해금 개념 없음 | Edge Function |
 | `legendary_cooldowns` | 전설 포획 재시도 쿨타임 | Edge Function |
 | `legendary_pity` | 전설 포획 실패 누적(영구 확률 상승) | Edge Function |
 | `encounter_sessions` | 인카운터 세션(격리 탭, 임시) | Edge Function |
@@ -109,7 +109,7 @@ Index: `idx_cities_living_area ON cities(living_area_id)`. Constraint(앱 레벨
 | `city_a_id` | int | FK → `cities.id` |
 | `city_b_id` | int | FK → `cities.id` |
 
-Constraint: `PRIMARY KEY(city_a_id, city_b_id)`, `CHECK(city_a_id < city_b_id)`. 조회는 `v_city_neighbors`(§7). 섬 지역(제주도 등)은 육지와 연결된 행이 없다 — 이것이 §16 최종 히든 지역이 일반 해금 룰을 못 타는 이유.
+Constraint: `PRIMARY KEY(city_a_id, city_b_id)`, `CHECK(city_a_id < city_b_id)`. 조회는 `v_city_neighbors`(§7). 섬 지역(제주도 등)은 육지와 연결된 행이 없다 — 인접 이동만으로는 도달 자체가 불가능해 §16 최종 히든 지역이 별도 해금 조건을 갖는 이유.
 
 ### 4.7 `pokemon_species`
 | 컬럼 | 타입 | 제약 |
@@ -152,7 +152,7 @@ Constraint: `UNIQUE(living_area_id, dex_no)`. 전설(`is_legendary=true`) 행은
 | `province_id` | smallint | FK → `provinces.id` |
 | `unlocked_at` | timestamptz | DEFAULT now() |
 
-Constraint: `PRIMARY KEY(user_id, province_id)`. 최초 해금 = 회원가입 시 GPS로 결정된 도. `is_island_endgame=true`인 도는 §16 조건으로만 삽입.
+Constraint: `PRIMARY KEY(user_id, province_id)`. 육지 도는 이동 자체에 해금 조건이 없어 이 테이블에 행을 만들지 않는다 — `is_island_endgame=true`인 도(제주도/울릉도·독도)만 §16 조건 충족 시 삽입.
 
 ### 4.11 `legendary_cooldowns`
 전설 포획 실패 후 재시도 잠금 — `next_available_at`이 여기 있다.
@@ -255,13 +255,10 @@ CREATE FUNCTION calc_legendary_catch_rate(fail_visits smallint) RETURNS numeric 
 $$ LANGUAGE sql IMMUTABLE;
 ```
 
-### 6.4 `check_province_unlock(p_user_id uuid, p_province_id smallint) RETURNS boolean`
-해당 도의 포획 종/배정 종 ≥ 70%(`v_user_province_progress`)이면 true. 인접 미해금 도에 대해 이동 처리 후 재평가.
+### 6.4 `check_endgame_unlock(p_user_id uuid) RETURNS boolean`
+`is_island_endgame=false`인 모든 도가 100% 포획 완료(`v_user_province_progress`)이면 true — 제주도/울릉도·독도 해금 조건(`PokeMap_MainSystem.md` §2). 육지 도는 해금 조건 자체가 없어(§14) 이 함수의 대상이 아니다.
 
-### 6.5 `check_endgame_unlock(p_user_id uuid) RETURNS boolean`
-`is_island_endgame=false`인 모든 도가 100% 포획 완료(`v_user_province_progress`)이면 true — 제주도/울릉도·독도 해금 조건(`PokeMap_MainSystem.md` §2).
-
-### 6.6 `calc_user_tier(p_user_id uuid) RETURNS text`
+### 6.5 `calc_user_tier(p_user_id uuid) RETURNS text`
 전체 포켓몬(도 구분 없이) 대비 유저 포획률로 등급 산출. 임계값은 가정치이며 밸런스 조정 시 `PRD.md` §14 갱신 필요.
 ```sql
 CREATE FUNCTION calc_user_tier(p_user_id uuid) RETURNS text AS $$
@@ -281,7 +278,7 @@ $$ LANGUAGE sql STABLE;
 ## 7. View
 
 - `v_city_neighbors` — `city_connections` 양방향 전개.
-- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_province_unlock`, `check_endgame_unlock`, Pokedex 진행률 표시에 재사용.
+- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용.
 - `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환).
 
 ## 8. RLS & Policy
@@ -301,17 +298,17 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 
 | 함수 | 트리거 | 역할 |
 |---|---|---|
-| `bootstrap-location` | 회원가입 직후(GPS 좌표 전달) | 좌표 → 최근접 `cities.centroid` 매칭 → `user_progress` 생성, `user_province_unlocks`에 해당 도 삽입 |
-| `move-city` | Map에서 인접 시 이동 | 인접성/도 해금 검증 → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `unlock-check` 호출 |
+| `bootstrap-location` | 회원가입 직후(GPS 좌표 전달) | 좌표 → 최근접 `cities.centroid` 매칭 → `user_progress` 생성 |
+| `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 섬 지역은 `is_island_endgame=true`이고 `user_province_unlocks` 미해금이면 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `unlock-check` 호출 |
 | `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
-| `unlock-check` | `move-city` 내부 호출 | `check_province_unlock`으로 인접 미해금 도 재평가, `check_endgame_unlock`으로 섬 지역 재평가 |
+| `unlock-check` | `move-city` 내부 호출 | `check_endgame_unlock`으로 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
 | `session-sweep` | Cron(5분) | 만료된 `encounter_sessions`를 `fled` 처리, 만료된 `legendary_cooldowns` 정리 |
 
 ## 10. Transaction 설계
 
 **`move-city`**:
 1. `SELECT ... FOR UPDATE` on `user_progress`
-2. 인접성 검증, 목적지 도 해금 여부 검증(미해금이면 거부)
+2. 인접성 검증. 목적지가 섬 지역(`is_island_endgame=true`)이면 `user_province_unlocks` 해금 여부 추가 검증(미해금이면 거부) — 육지 도는 해금 검증 없음
 3. 목적지가 전설 출현지이고 해당 도 진행률 100%이며 `legendary_cooldowns.next_available_at`이 지났으면 → `is_legendary=true` 세션 생성(확률 판정 없음)
 4. 그 외에는 `calc_spawn_rate` 판정 → 성공 시 일반 세션 생성
 5. `user_progress.current_city_id` 갱신, 커밋
@@ -356,7 +353,7 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 
 ## 14. Unlock 계산
 
-`v_user_province_progress`로 도별 완성률 계산 → 70% 이상이면 인접 미해금 도를 `user_province_unlocks`에 삽입. 지방(8개 그룹) 단위가 아니라 **도(17개) 단위**로 해금이 이루어진다는 점에 주의 — 인접 도가 다른 포켓몬 지방에 속해도 70% 조건만 맞으면 해금된다.
+육지 도(`is_island_endgame=false`)는 해금 조건이 없다 — 인접 시로 이동 가능하면 도 경계와 무관하게 바로 이동된다. 해금 개념은 §16 최종 히든 지역(섬)에만 남아 있다.
 
 ## 15. Legendary 계산
 
@@ -367,8 +364,8 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 
 ## 16. 최종 히든 지역 (제주도 / 울릉도·독도)
 
-- `provinces.is_island_endgame=true`인 도는 `city_connections`상 육지와 연결되지 않아(§4.6) 일반 인접-70% 해금 룰을 절대 만족할 수 없다.
-- 대신 `check_endgame_unlock`: `is_island_endgame=false`인 모든 도가 100% 완료되어야 해금.
+- `provinces.is_island_endgame=true`인 도는 `city_connections`상 육지와 연결되지 않아(§4.6) 인접 이동으로는 도달할 수 없다 — 이 도들만 유일하게 해금 조건이 남아 있다.
+- `check_endgame_unlock`: `is_island_endgame=false`인 모든 도가 100% 완료되어야 해금.
 - **데이터 갭**: 제주도는 `MapMatching.md`/`pokemon.csv`에 이미 알로라지방 소속으로 존재하지만, 울릉도·독도는 `korea_living_areas.csv`/`pokemon.csv` 어디에도 없다 — 별도 도/생활권/시/포켓몬 배정 시드가 추가로 필요하다(현재 스키마는 확장을 지원하지만 데이터는 없음).
 
 ## 17. `next_available_at` 상세
