@@ -694,9 +694,14 @@ export type Database = {
     }
     Functions: {
       calc_catch_rate: { Args: { bst: number }; Returns: number }
+      calc_catch_rate_tier: { Args: { rate: number }; Returns: string }
       calc_legendary_catch_rate: {
         Args: { fail_visits: number }
         Returns: number
+      }
+      calc_session_catch_tier: {
+        Args: { p_session_id: string }
+        Returns: string
       }
       calc_spawn_rate: { Args: { bst: number }; Returns: number }
       calc_user_tier: { Args: { p_user_id: string }; Returns: string }
