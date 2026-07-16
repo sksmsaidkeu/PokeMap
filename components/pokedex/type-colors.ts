@@ -21,3 +21,8 @@ const TYPE_COLORS: Record<string, string> = {
 export function typeColorClass(type: string): string {
   return TYPE_COLORS[type] ?? "bg-zinc-400";
 }
+
+// 상세 탭 타입 뱃지용 — 색 배경 + 흰 글자 + 픽셀풍 테두리
+export function typeBadgeClass(type: string): string {
+  return `inline-block rounded border border-black px-2 py-0.5 text-xs font-bold text-white ${typeColorClass(type)}`;
+}
