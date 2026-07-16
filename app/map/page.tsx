@@ -98,19 +98,24 @@ export default async function MapPage() {
   const { data: neighborCities } = neighborIds.length
     ? await supabase
         .from('cities')
-        .select('id, centroid, living_areas!inner(province_id, provinces!inner(is_island_endgame))')
+        .select(
+          'id, centroid, living_areas!inner(province_id, is_endgame_area, provinces!inner(is_island_endgame))',
+        )
         .in('id', neighborIds)
     : { data: [] }
+
+  // 해금 행은 check_endgame_unlock 충족 시 일괄 삽입되므로 행 존재 자체가 "내륙 100%" 신호(DB.md §16)
+  const endgameUnlocked = unlockedProvinces.size > 0
 
   const neighbors: Neighbor[] = assignDirs(
     playerCentroid,
     (neighborCities ?? []).map((c) => ({
       cityId: c.id,
       centroid: parsePoint(c.centroid),
-      // 섬 지역이고 아직 해금 안 됐으면 잠금(육지 도는 항상 이동 가능)
+      // 최종 히든 지역(도 단위 제주 / 생활권 단위 울릉권·옹진군)만 잠금, 육지 도는 항상 이동 가능
       locked:
-        c.living_areas.provinces.is_island_endgame &&
-        !unlockedProvinces.has(c.living_areas.province_id),
+        (c.living_areas.provinces.is_island_endgame || c.living_areas.is_endgame_area) &&
+        !endgameUnlocked,
     })),
   )
 

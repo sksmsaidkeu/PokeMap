@@ -23,7 +23,8 @@ export interface RegionMapProps {
 }
 
 interface RawRegion { color: string; geometry: Geometry }
-interface RawHidden { color: string; real_geometry: Geometry }
+// 독도 등 symbolic 항목은 real_geometry 없이 real_point만 갖는다(원본 데이터 주석 참고)
+interface RawHidden { color: string; real_geometry?: Geometry; real_point?: [number, number] }
 interface RawMap { main_map_bounds: Bounds; regions: RawRegion[]; hidden_areas: RawHidden[] }
 
 const map = rawMap as unknown as RawMap
@@ -32,8 +33,14 @@ const map = rawMap as unknown as RawMap
 const PROJ = createProjection(map.main_map_bounds, 1000)
 const SHAPES: { color: string; d: string }[] = [
   ...map.regions.map((r) => ({ color: r.color, d: geoPath(r.geometry, PROJ.project) })),
-  ...map.hidden_areas.map((h) => ({ color: h.color, d: geoPath(h.real_geometry, PROJ.project) })),
+  ...map.hidden_areas
+    .filter((h): h is RawHidden & { real_geometry: Geometry } => h.real_geometry != null)
+    .map((h) => ({ color: h.color, d: geoPath(h.real_geometry, PROJ.project) })),
 ]
+// 폴리곤 없는 symbolic 지역(독도)은 실좌표에 점으로 표시
+const SYMBOLIC_DOTS: { color: string; p: Point }[] = map.hidden_areas
+  .filter((h) => h.real_geometry == null && h.real_point != null)
+  .map((h) => ({ color: h.color, p: PROJ.project(h.real_point![0], h.real_point![1]) }))
 
 const ZOOM = 0.28 // 플레이어+인접 시가 보이는 수준(PRD §8.2)
 
@@ -76,6 +83,9 @@ export default function RegionMap({
       <g fillRule="evenodd" stroke="#ffffff" strokeWidth={view.stroke} pointerEvents="none">
         {SHAPES.map((s, i) => (
           <path key={i} d={s.d} fill={s.color} />
+        ))}
+        {SYMBOLIC_DOTS.map((s, i) => (
+          <circle key={i} cx={s.p.x} cy={s.p.y} r={view.markerR * 1.4} fill={s.color} />
         ))}
       </g>
 
