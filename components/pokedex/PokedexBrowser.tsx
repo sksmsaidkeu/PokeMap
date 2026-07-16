@@ -35,10 +35,11 @@ export function PokedexBrowser({ groups }: PokedexBrowserProps) {
           onSubmit={(e) => e.preventDefault()}
           role="search"
         >
+          {/* 터치 타깃 44px 이상(PRD §23) — h-11/w-11 고정 */}
           <Link
             href="/map"
             aria-label="지도로 돌아가기"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#e3350d] font-bold text-white hover:brightness-110"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#e3350d] font-bold text-white hover:brightness-110"
           >
             ‹
           </Link>
@@ -47,12 +48,12 @@ export function PokedexBrowser({ groups }: PokedexBrowserProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="포켓몬 이름 검색"
-            className="h-9 flex-1 rounded-lg border-2 border-black px-3 text-sm outline-none focus:ring-2 focus:ring-[#e3350d]"
+            className="h-11 min-w-0 flex-1 rounded-lg border-2 border-black px-3 text-base outline-none focus:ring-2 focus:ring-[#e3350d]"
           />
           <button
             type="submit"
             aria-label="검색"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#c9a86a] text-white hover:brightness-110"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#c9a86a] text-white hover:brightness-110"
           >
             🔍
           </button>

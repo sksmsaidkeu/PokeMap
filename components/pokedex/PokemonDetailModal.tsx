@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { PokedexCard } from "@/lib/game/pokedex-types";
 import { PokemonSprite } from "./PokemonSprite";
 import { typeBadgeClass, typeColorClass } from "./type-colors";
@@ -35,12 +38,27 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 
 export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
   const { species, entry } = card;
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // 접근성(PRD §23): ESC로 닫기 + 열리는 순간 닫기 버튼에 포커스(키보드 사용자 탈출 경로 보장)
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   if (!entry) return null; // Locked 카드는 애초에 열리지 않지만 타입 안전을 위해 방어
 
   const types = [species.type1, species.type2].filter((t): t is string => Boolean(t));
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${species.name_kr} 상세 정보`}
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#5b4b8a]/80 p-4"
       onClick={onClose}
     >
@@ -56,9 +74,10 @@ export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
               <span className="text-xs font-bold text-white">{dexLabel(species.dex_no)}</span>
             </div>
             <button
+              ref={closeRef}
               type="button"
               onClick={onClose}
-              className="rounded border border-white/70 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20"
+              className="min-h-11 min-w-11 rounded border border-white/70 px-3 text-xs font-bold text-white hover:bg-white/20"
             >
               닫기
             </button>
