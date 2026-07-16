@@ -1,7 +1,15 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
-import { AppHeader } from '@/components/ui/AppHeader'
+import { AppHeader, type UserTier } from '@/components/ui/AppHeader'
+
+// calc_user_tier는 표시용 한글 라벨을 반환(DB.md §6.5) — 배지 키로 역매핑
+const TIER_BY_LABEL: Record<string, UserTier> = {
+  몬스터볼: 'monster',
+  슈퍼볼: 'super',
+  하이퍼볼: 'hyper',
+  마스터볼: 'master',
+}
 
 // PostgREST는 point를 "(lon,lat)" 문자열로 반환 → {lon,lat} 파싱
 // 실패 시 (0,0) 폴백이 바다를 조용히 렌더하는 것보다 즉시 실패가 낫다
@@ -107,7 +115,7 @@ export default async function MapPage() {
   )
 
   // 전설 출현지: 현재 도 진행률 100%일 때만, 그 도의 is_legendary_site 시 노출(§15)
-  const [{ data: provProgress }, { data: legendaryCity }] = await Promise.all([
+  const [{ data: provProgress }, { data: legendaryCity }, { data: tierLabel }] = await Promise.all([
     supabase
       .from('v_user_province_progress')
       .select('pct')
@@ -120,6 +128,7 @@ export default async function MapPage() {
       .eq('is_legendary_site', true)
       .eq('living_areas.province_id', currentProvinceId)
       .maybeSingle(),
+    supabase.rpc('calc_user_tier', { p_user_id: user.id }),
   ])
 
   const complete = provProgress?.pct != null && provProgress.pct >= 1
@@ -130,8 +139,8 @@ export default async function MapPage() {
     <main className="flex min-h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
-        // TODO: calc_user_tier 연동
-        tier="monster"
+        // rpc 실패 시 최저 등급 폴백 — 헤더가 페이지를 막을 이유는 없다
+        tier={TIER_BY_LABEL[tierLabel ?? ''] ?? 'monster'}
       />
       <MapContainer
         playerCentroid={playerCentroid}
