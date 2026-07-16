@@ -1,19 +1,50 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
+import { AppHeader } from '@/components/ui/AppHeader'
 
 // PostgREST는 point를 "(lon,lat)" 문자열로 반환 → {lon,lat} 파싱
+// 실패 시 (0,0) 폴백이 바다를 조용히 렌더하는 것보다 즉시 실패가 낫다
 function parsePoint(raw: unknown): LatLng {
   const m = typeof raw === 'string' ? raw.match(/\(([-\d.]+),\s*([-\d.]+)\)/) : null
-  return m ? { lon: Number(m[1]), lat: Number(m[2]) } : { lon: 0, lat: 0 }
+  if (!m) throw new Error(`parsePoint: invalid centroid value: ${String(raw)}`)
+  return { lon: Number(m[1]), lat: Number(m[2]) }
 }
 
-// 현재 시 대비 이웃 centroid의 위경도 델타 최대축으로 방향 결정
-function dirOf(from: LatLng, to: LatLng): Neighbor['dir'] {
-  const dLon = to.lon - from.lon
-  const dLat = to.lat - from.lat
-  if (Math.abs(dLon) >= Math.abs(dLat)) return dLon >= 0 ? 'right' : 'left'
-  return dLat >= 0 ? 'up' : 'down'
+const DIR_ANGLE: Record<Neighbor['dir'], number> = {
+  right: 0,
+  up: Math.PI / 2,
+  left: Math.PI,
+  down: -Math.PI / 2,
+}
+
+// 같은 방향에 이웃이 몰려도 각 이웃을 상/하/좌/우 중 하나에 유일 배정 —
+// 각도가 가장 가까운 (이웃, 방향) 쌍부터 그리디 매칭.
+// 화살표 UI는 4방향 고정(PRD §8.2)이라 4개 초과 이웃은 각도 근접 상위 4개만 노출.
+function assignDirs(
+  from: LatLng,
+  candidates: { cityId: number; centroid: LatLng; locked: boolean }[],
+): Neighbor[] {
+  const pairs: { idx: number; dir: Neighbor['dir']; dist: number }[] = []
+  candidates.forEach((c, idx) => {
+    const angle = Math.atan2(c.centroid.lat - from.lat, c.centroid.lon - from.lon)
+    for (const dir of Object.keys(DIR_ANGLE) as Neighbor['dir'][]) {
+      const d = angle - DIR_ANGLE[dir]
+      pairs.push({ idx, dir, dist: Math.abs(Math.atan2(Math.sin(d), Math.cos(d))) })
+    }
+  })
+  pairs.sort((a, b) => a.dist - b.dist)
+  const usedIdx = new Set<number>()
+  const usedDir = new Set<Neighbor['dir']>()
+  const out: Neighbor[] = []
+  for (const p of pairs) {
+    if (usedIdx.has(p.idx) || usedDir.has(p.dir)) continue
+    usedIdx.add(p.idx)
+    usedDir.add(p.dir)
+    const c = candidates[p.idx]
+    out.push({ dir: p.dir, cityId: c.cityId, locked: c.locked })
+  }
+  return out
 }
 
 export default async function MapPage() {
@@ -33,7 +64,7 @@ export default async function MapPage() {
 
   const currentCityId = progress.current_city_id
 
-  const [{ data: currentCity }, { data: neighborRows }, { data: unlockRows }] =
+  const [{ data: currentCity }, { data: neighborRows }, { data: unlockRows }, { data: profile }] =
     await Promise.all([
       supabase
         .from('cities')
@@ -42,6 +73,7 @@ export default async function MapPage() {
         .single(),
       supabase.from('v_city_neighbors').select('neighbor_id').eq('city_id', currentCityId),
       supabase.from('user_province_unlocks').select('province_id').eq('user_id', user.id),
+      supabase.from('profiles').select('nickname').eq('id', user.id).maybeSingle(),
     ])
 
   if (!currentCity) redirect('/login')
@@ -62,16 +94,17 @@ export default async function MapPage() {
         .in('id', neighborIds)
     : { data: [] }
 
-  const neighbors: Neighbor[] = (neighborCities ?? []).map((c) => {
-    const provinceId = c.living_areas.province_id
-    const isIsland = c.living_areas.provinces.is_island_endgame
-    return {
-      dir: dirOf(playerCentroid, parsePoint(c.centroid)),
+  const neighbors: Neighbor[] = assignDirs(
+    playerCentroid,
+    (neighborCities ?? []).map((c) => ({
       cityId: c.id,
+      centroid: parsePoint(c.centroid),
       // 섬 지역이고 아직 해금 안 됐으면 잠금(육지 도는 항상 이동 가능)
-      locked: isIsland && !unlockedProvinces.has(provinceId),
-    }
-  })
+      locked:
+        c.living_areas.provinces.is_island_endgame &&
+        !unlockedProvinces.has(c.living_areas.province_id),
+    })),
+  )
 
   // 전설 출현지: 현재 도 진행률 100%일 때만, 그 도의 is_legendary_site 시 노출(§15)
   const [{ data: provProgress }, { data: legendaryCity }] = await Promise.all([
@@ -95,6 +128,11 @@ export default async function MapPage() {
 
   return (
     <main className="flex min-h-screen flex-col">
+      <AppHeader
+        trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
+        // TODO: calc_user_tier 연동
+        tier="monster"
+      />
       <MapContainer
         playerCentroid={playerCentroid}
         neighbors={neighbors}

@@ -69,6 +69,7 @@ export function MapContainer({
         playerCentroid={playerCentroid}
         neighbors={neighbors}
         legendarySite={legendarySite}
+        moving={moving}
         onArrowClick={handleArrowClick}
       />
       {error && (

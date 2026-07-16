@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import rawMap from '@/files/korea_map_data.min.json'
 import {
   createProjection,
@@ -18,6 +18,7 @@ export interface RegionMapProps {
   playerCentroid: LonLat
   neighbors: NeighborArrow[] // 없는 방향은 생략
   legendarySite?: LonLat | null // 도 100% 완공 시 전설 출현지
+  moving?: boolean // 서버 이동 응답 대기 중 — 화살표 dim + 입력 차단(§2 낙관적 업데이트 금지)
   onArrowClick: (dir: Dir, cityId: number) => void
 }
 
@@ -40,6 +41,7 @@ export default function RegionMap({
   playerCentroid,
   neighbors,
   legendarySite,
+  moving = false,
   onArrowClick,
 }: RegionMapProps) {
   const view = useMemo(() => {
@@ -65,8 +67,10 @@ export default function RegionMap({
       viewBox={view.viewBox}
       preserveAspectRatio="xMidYMid meet"
       style={{ width: '100%', height: '100%', display: 'block', background: '#eaf1f5' }}
-      role="img"
+      // role="img"은 자식을 presentational로 만들어 화살표 role="button"이 SR에서 사라진다 → group
+      role="group"
       aria-label="지역 지도"
+      aria-busy={moving}
     >
       {/* 폴리곤: 클릭 불가(오직 화살표로만 이동) */}
       <g fillRule="evenodd" stroke="#ffffff" strokeWidth={view.stroke} pointerEvents="none">
@@ -78,16 +82,17 @@ export default function RegionMap({
       {legendary && <LegendaryMark p={legendary} r={view.markerR * 1.6} />}
 
       {/* 플레이어 마커 */}
-      <circle cx={view.c.x} cy={view.c.y} r={view.markerR} fill="#111827" stroke="#ffffff" strokeWidth={view.stroke * 2} />
+      <circle cx={view.c.x} cy={view.c.y} r={view.markerR} fill="#111827" stroke="#ffffff" strokeWidth={view.markerR * 0.25} />
 
       {neighbors.map((n) => (
         <Arrow
-          key={n.dir}
+          key={n.cityId}
           dir={n.dir}
           center={arrowCenter(view.c, n.dir, view.gap)}
           size={view.size}
           locked={n.locked}
-          onClick={n.locked ? undefined : () => onArrowClick(n.dir, n.cityId)}
+          moving={moving}
+          onClick={n.locked || moving ? undefined : () => onArrowClick(n.dir, n.cityId)}
         />
       ))}
     </svg>
@@ -120,20 +125,25 @@ function Arrow({
   center,
   size,
   locked,
+  moving,
   onClick,
 }: {
   dir: Dir
   center: Point
   size: number
   locked: boolean
+  moving: boolean
   onClick?: () => void
 }) {
+  // 키보드 포커스에만 링 표시(WCAG 2.4.7) — 마우스 클릭 포커스는 :focus-visible 미매칭
+  const [focusRing, setFocusRing] = useState(false)
   return (
     <g
       role="button"
       aria-label={`${DIR_LABEL[dir]}쪽으로 이동${locked ? ' (잠김)' : ''}`}
       aria-disabled={locked}
-      tabIndex={locked ? -1 : 0}
+      // 잠긴 방향도 포커스 가능해야 키보드/SR 사용자가 존재를 인지한다(활성화만 차단)
+      tabIndex={0}
       onClick={onClick}
       onKeyDown={
         onClick
@@ -145,10 +155,24 @@ function Arrow({
             }
           : undefined
       }
-      style={{ cursor: locked ? 'not-allowed' : 'pointer' }}
+      onFocus={(e) => setFocusRing(e.currentTarget.matches(':focus-visible'))}
+      onBlur={() => setFocusRing(false)}
+      style={{ cursor: locked ? 'not-allowed' : moving ? 'wait' : 'pointer' }}
+      opacity={moving ? 0.4 : 1}
     >
       {/* 히트 영역 확대 */}
       <circle cx={center.x} cy={center.y} r={size * 1.8} fill="transparent" />
+      {focusRing && (
+        <circle
+          cx={center.x}
+          cy={center.y}
+          r={size * 1.5}
+          fill="none"
+          stroke="#111827"
+          strokeWidth={size * 0.15}
+          pointerEvents="none"
+        />
+      )}
       <polygon
         points={arrowPoints(center, dir, size)}
         fill={locked ? '#9ca3af' : '#111827'}

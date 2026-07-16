@@ -34,3 +34,5 @@ db/
 
 # 로컬 작업 계획 문서 (개인 작업용, 커밋 대상 아님)
 Plan.md
+*.tsbuildinfo
+

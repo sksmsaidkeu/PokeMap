@@ -323,6 +323,15 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 - `catch_rate_tier`(§13.1)는 아직 `calc_catch_rate_tier` DB 함수가 없어 `fn_move_city` 내부에서 CASE로 인라인 매핑한다. `catch-attempt` EF 작성 시 `calc_catch_rate_tier`로 추출·공용화 — 그때 이 인라인은 제거.
 - §10 6단계 `unlock-check`는 별도 EF를 만들지 않고, `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입하는 것으로 대체(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 독립 `unlock-check` EF는 §9대로 후속 작업.
 
+### 10.2 `bootstrap-location` 구현 (마이그레이션 `20260718000000_fn_bootstrap_location`)
+
+코어는 `public.fn_bootstrap_location(p_user_id uuid, p_lat double precision, p_lng double precision) RETURNS json`(plpgsql, `SECURITY DEFINER`)이고, Edge Function은 JWT에서 `user_id`를 검증(§20)하고 좌표를 범위 검증(둘 다 null이거나 둘 다 한국 근방)한 뒤 `service_role`로 rpc 호출하는 얇은 래퍼다. EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지).
+
+- idempotent: `user_progress` 행이 이미 있으면 좌표를 무시하고 기존 `current_city_id`를 반환(`created:false`). 클라이언트는 가입/로그인 어느 경로에서든 재호출해도 안전하다 — 이메일 확인이 켜진 프로젝트에선 가입 직후 세션이 없어 로그인이 사실상 첫 부트스트랩 경로가 된다.
+- 좌표가 null(GPS 권한 거부/미지원)이면 서울특별시 소속 첫 시로 폴백(CLAUDE.md §6), 아니면 `cities.centroid` 최근접(`<->`) 매칭. 도시 데이터가 없으면 `NO_CITY_DATA`(500).
+- **`profiles` 자동 생성 계약**: `user_progress` FK가 `profiles`를 요구하므로 행이 없으면 `nickname = 'trainer-' || user_id`(uuid 전체 — UNIQUE 충돌 없음)로 선생성한다. 닉네임 설정 화면은 신규 INSERT가 아니라 이 기본값을 UPDATE하는 전제로 만들 것.
+- 동시 호출(더블클릭) 레이스는 `profiles`/`user_progress` INSERT 모두 `on conflict do nothing` 후 재조회로 처리 — 행 락 불필요.
+
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`
 2. `status='pending' AND expires_at > now()` 확인, `attempts_used < 3` 확인

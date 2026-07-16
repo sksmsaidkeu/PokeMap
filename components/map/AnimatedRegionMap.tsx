@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { animate } from 'framer-motion'
+import { animate, useReducedMotion } from 'framer-motion'
 import RegionMap, { type RegionMapProps } from './RegionMap'
 
 const GLIDE_MS = 400 // 300~500ms 권장 글라이드
@@ -13,11 +13,19 @@ export default function AnimatedRegionMap(props: RegionMapProps) {
   const { playerCentroid } = props
   const [display, setDisplay] = useState(playerCentroid)
   const displayRef = useRef(playerCentroid)
+  const reducedMotion = useReducedMotion()
 
   useEffect(() => {
     const from = displayRef.current
     const to = playerCentroid
     if (from.lon === to.lon && from.lat === to.lat) return
+
+    // prefers-reduced-motion: standalone animate()는 MotionConfig 영향 밖이라 직접 분기 필요
+    if (reducedMotion) {
+      displayRef.current = to
+      setDisplay(to)
+      return
+    }
 
     const controls = animate(0, 1, {
       duration: GLIDE_MS / 1000,
@@ -33,7 +41,7 @@ export default function AnimatedRegionMap(props: RegionMapProps) {
     })
 
     return () => controls.stop()
-  }, [playerCentroid.lon, playerCentroid.lat])
+  }, [playerCentroid.lon, playerCentroid.lat, reducedMotion])
 
   return <RegionMap {...props} playerCentroid={display} />
 }

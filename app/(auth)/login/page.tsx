@@ -1,4 +1,5 @@
 import TitleScreen from '@/components/title/TitleScreen'
+import LoginForm from '@/components/auth/LoginForm'
 
 export default function LoginPage() {
   return (
@@ -9,7 +10,7 @@ export default function LoginPage() {
         <p className="text-sm text-[#ede6d6]/60">
           가입 시 GPS로 시작 위치가 정해집니다(PRD §5).
         </p>
-        {/* TODO: Supabase Auth 폼 연동 */}
+        <LoginForm />
       </div>
     </main>
   )
