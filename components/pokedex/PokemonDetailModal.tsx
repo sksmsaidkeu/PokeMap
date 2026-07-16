@@ -1,5 +1,6 @@
 import type { PokedexCard } from "@/lib/game/pokedex-types";
-import { typeBadgeClass } from "./type-colors";
+import { PokemonSprite } from "./PokemonSprite";
+import { typeBadgeClass, typeColorClass } from "./type-colors";
 
 type PokemonDetailModalProps = {
   card: PokedexCard;
@@ -62,21 +63,30 @@ export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
               닫기
             </button>
           </div>
-          <div className="p-4">
-            <h2 className="flex items-center gap-2 text-lg font-bold text-black">
-              {species.name_kr}
-              {card.isLegendary && (
-                <span className="rounded bg-[#e3350d] px-1.5 py-0.5 text-[10px] font-bold text-white">
-                  전설
-                </span>
-              )}
-            </h2>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {types.map((t) => (
-                <span key={t} className={typeBadgeClass(t)}>
-                  {t}
-                </span>
-              ))}
+          <div className="flex items-center gap-3 p-4">
+            <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-lg bg-zinc-50">
+              <PokemonSprite
+                dexNo={species.dex_no}
+                alt={species.name_kr}
+                fallbackClass={typeColorClass(species.type1)}
+              />
+            </div>
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-bold text-black">
+                {species.name_kr}
+                {card.isLegendary && (
+                  <span className="rounded bg-[#e3350d] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    전설
+                  </span>
+                )}
+              </h2>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {types.map((t) => (
+                  <span key={t} className={typeBadgeClass(t)}>
+                    {t}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </div>

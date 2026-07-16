@@ -1,4 +1,5 @@
 import type { PokedexCard } from "@/lib/game/pokedex-types";
+import { PokemonSprite } from "./PokemonSprite";
 import { typeColorClass } from "./type-colors";
 
 type PokemonCardProps = {
@@ -20,8 +21,9 @@ export function PokemonCard({ card, onSelect }: PokemonCardProps) {
         aria-disabled="true"
         className="flex flex-col rounded-xl border-2 border-black bg-white p-2 opacity-90"
       >
-        <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-zinc-50">
-          <div className="h-2/3 w-2/3 rounded-full bg-black" />
+        <div className="relative flex aspect-square w-full items-center justify-center rounded-lg bg-zinc-50">
+          {/* alt를 ???로 두는 이유: 미포획 종 이름이 스크린리더로 새는 것 방지 */}
+          <PokemonSprite dexNo={species.dex_no} alt="???" silhouette />
         </div>
         <div className="mt-2">
           <p className="text-[10px] font-medium text-zinc-400">???</p>
@@ -38,7 +40,11 @@ export function PokemonCard({ card, onSelect }: PokemonCardProps) {
       className="flex flex-col rounded-xl border-2 border-black bg-white p-2 text-left transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000]"
     >
       <div className="relative flex aspect-square w-full items-center justify-center rounded-lg bg-zinc-50">
-        <div className={`h-2/3 w-2/3 rounded-full ${typeColorClass(species.type1)}`} />
+        <PokemonSprite
+          dexNo={species.dex_no}
+          alt={species.name_kr}
+          fallbackClass={typeColorClass(species.type1)}
+        />
         {card.isLegendary && (
           <span className="absolute right-1 top-1 rounded bg-[#e3350d] px-1 text-[9px] font-bold text-white">
             전설
