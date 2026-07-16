@@ -62,7 +62,6 @@ supabase/
     bootstrap-location/
     move-city/
     catch-attempt/
-    unlock-check/
     session-sweep/
 files/                 # GeoJSON 원본 (수정 금지, 읽기 전용 자산)
 ```
@@ -130,7 +129,7 @@ type PokedexEntry = Pick<
 
 ## 13. Edge Function 작성 규칙
 
-- 함수당 책임 하나(`bootstrap-location`, `move-city`, `catch-attempt`, `unlock-check`, `session-sweep` — `DB.md` §9). 새 로직을 기존 함수에 욱여넣지 않는다.
+- 함수당 책임 하나(`bootstrap-location`, `move-city`, `catch-attempt`, `session-sweep` — `DB.md` §9). 새 로직을 기존 함수에 욱여넣지 않는다.
 - 트랜잭션 경계와 잠금 순서는 `DB.md` §10~11을 그대로 구현(`user_progress` → `encounter_sessions` 순서 고정, 역순 금지).
 - 입력 검증은 함수 진입점에서 즉시(인접성, 세션 만료, 지방 해금 여부) — 검증 실패는 조기 반환.
 

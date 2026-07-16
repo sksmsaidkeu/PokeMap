@@ -299,9 +299,9 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 | 함수 | 트리거 | 역할 |
 |---|---|---|
 | `bootstrap-location` | 회원가입 직후(GPS 좌표 전달) | 좌표 → 최근접 `cities.centroid` 매칭 → `user_progress` 생성 |
-| `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 섬 지역은 `is_island_endgame=true`이고 `user_province_unlocks` 미해금이면 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `unlock-check` 호출 |
+| `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 섬 지역은 `is_island_endgame=true`이고 `user_province_unlocks` 미해금이면 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `check_endgame_unlock` 평가(§10 6단계) |
 | `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
-| `unlock-check` | `move-city` 내부 호출 | `check_endgame_unlock`으로 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
+| `unlock-check` | 폐기(독립 EF 없음) | `fn_move_city` 6단계 + `fn_catch_attempt` 포획 성공 경로에서 `check_endgame_unlock` 평가로 대체 — 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
 | `session-sweep` | Cron(5분) | 만료된 `encounter_sessions`를 `fled` 처리, 만료된 `legendary_cooldowns` 정리 |
 
 - `session-sweep` 구현: `pg_cron`이 5분마다 `fn_session_sweep()`을 직접 호출한다(순수 정리, pity/쿨다운 부여 없음 — 타임아웃 만료는 `trg_session_flee` 3회 실패 경로와 무관). EF는 수동 운영용 래퍼로, `service_role` key bearer일 때만 같은 함수를 호출한다.
@@ -314,7 +314,7 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 3. 목적지가 전설 출현지이고 해당 도 진행률 100%이며 `legendary_cooldowns.next_available_at`이 지났으면 → `is_legendary=true` 세션 생성(확률 판정 없음)
 4. 그 외에는 `calc_spawn_rate` 판정 → 성공 시 일반 세션 생성
 5. `user_progress.current_city_id` 갱신, 커밋
-6. 커밋 후 `unlock-check` 실행
+6. `check_endgame_unlock` 평가 — true면 섬 지역 idempotent 해금(같은 트랜잭션 내, §10.1)
 
 ### 10.1 `move-city` 구현 (마이그레이션 `20260717000000_fn_move_city`)
 
@@ -323,7 +323,7 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 - 락은 `user_progress` 행 `FOR UPDATE` 하나만(§11). `encounter_sessions`는 INSERT라 별도 락 불필요.
 - 검증 실패는 `RAISE EXCEPTION`으로 코드 문자열(`NOT_ADJACENT`/`REGION_LOCKED`/`LEGENDARY_COOLDOWN`/`INVALID_INPUT`/`NO_PROGRESS`)을 message에 담아 던지고, EF가 이를 HTTP 4xx + `error.code`로 매핑.
 - `catch_rate_tier`(§13.1)는 아직 `calc_catch_rate_tier` DB 함수가 없어 `fn_move_city` 내부에서 CASE로 인라인 매핑한다. `catch-attempt` EF 작성 시 `calc_catch_rate_tier`로 추출·공용화 — 그때 이 인라인은 제거.
-- §10 6단계 `unlock-check`는 별도 EF를 만들지 않고, `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입하는 것으로 대체(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 독립 `unlock-check` EF는 §9대로 후속 작업.
+- §10 6단계 `unlock-check`는 별도 EF를 만들지 않는 것으로 확정: `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입한다(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 해금 조건이 실제로 바뀌는 유일한 시점은 포획 성공이므로 `fn_catch_attempt` 포획 성공 경로에도 동일 블록을 둔다(마이그레이션 `20260721000000_unlock_check_in_catch`) — 없으면 내륙 마지막 포획 직후 섬 이동이 한 번 거부되는 1이동 지연이 생긴다.
 
 ### 10.2 `bootstrap-location` 구현 (마이그레이션 `20260718000000_fn_bootstrap_location`)
 
