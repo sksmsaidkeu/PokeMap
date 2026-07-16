@@ -304,6 +304,8 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 | `unlock-check` | `move-city` 내부 호출 | `check_endgame_unlock`으로 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
 | `session-sweep` | Cron(5분) | 만료된 `encounter_sessions`를 `fled` 처리, 만료된 `legendary_cooldowns` 정리 |
 
+- `session-sweep` 구현: `pg_cron`이 5분마다 `fn_session_sweep()`을 직접 호출한다(순수 정리, pity/쿨다운 부여 없음 — 타임아웃 만료는 `trg_session_flee` 3회 실패 경로와 무관). EF는 수동 운영용 래퍼로, `service_role` key bearer일 때만 같은 함수를 호출한다.
+
 ## 10. Transaction 설계
 
 **`move-city`**:
