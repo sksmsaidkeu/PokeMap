@@ -38,13 +38,45 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 
 export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
   const { species, entry } = card;
+  const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  // 접근성(PRD §23): ESC로 닫기 + 열리는 순간 닫기 버튼에 포커스(키보드 사용자 탈출 경로 보장)
+  // 접근성(PRD §23): 열릴 때만 포커스 이동 + 닫힐 때 원래 위치로 복원 + 배경 스크롤 잠금.
+  // 마운트 시 1회만 실행([] 의존성) — onClose에 걸면 부모 리렌더마다 포커스가 다시 끌려가 입력을 방해함.
   useEffect(() => {
+    const prevActive = document.activeElement as HTMLElement | null;
+    const prevOverflow = document.body.style.overflow;
     closeRef.current?.focus();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      prevActive?.focus(); // 카드 그리드의 원래 위치로 포커스 복원
+    };
+  }, []);
+
+  // ESC 닫기 + Tab 포커스 트랩(aria-modal 약속대로 포커스를 다이얼로그 안에 가둠)
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -56,6 +88,7 @@ export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={`${species.name_kr} 상세 정보`}
