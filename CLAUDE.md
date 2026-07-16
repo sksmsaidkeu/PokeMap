@@ -5,7 +5,7 @@
 ## 1. 프로젝트 철학
 
 - 이 게임의 재미는 "지리적 정확성 + 확률 시스템의 신뢰성"에서 나온다. 스폰/포획/해금 확률은 항상 서버(Edge Function)에서만 판정한다 — 클라이언트는 절대 확률을 계산하거나 결과를 결정하지 않는다.
-- 게임 규칙의 원본은 `PokeMap_MainSystem.md`(핵심 시스템)와 `PokeMap_UISystem.md`(화면/등급)다. 데이터(지역 매칭, 스폰 풀)는 `MapMatching.md`/`pokemonRare.md`/`*.csv`가 원본이다. 코드에 하드코딩하지 않고 DB 시드로만 반영한다.
+- 게임 규칙의 원본은 `PokeMap_MainSystem.md`(핵심 시스템)와 `PokeMap_UISystem.md`(화면/등급)다. 데이터(지역 매칭, 스폰 풀 배정 규칙)는 `build_pokemon_db.py`(도→포켓몬지방 매칭, 공통/고유/전설 슬롯 배정, 이스터에그)와 `db/pokemon_db.csv`(전체 포켓몬 마스터), `korea_living_areas.csv`가 원본이며 이 스크립트의 산출물이 `pokemon.csv`다. 코드에 하드코딩하지 않고 DB 시드로만 반영한다.
 
 ## 2. 개발 원칙
 
@@ -15,6 +15,8 @@
 
 ## 3. AI(SubAgent) 협업 규칙
 
+- `convention-reviewer`가 팀장이다 — 나머지 SubAgent(map-renderer, data-layer-engineer, design-system-engineer, motion-interaction-director, a11y-responsive-qa)의 작업은 반드시 `convention-reviewer` 검토를 마지막 관문으로 통과해야 병합 가능하다. 위반 발견 시 반려하고 수정 방향을 지시할 권한을 가진다.
+- **도메인 경계 — pokedex(도감) 절대 금지**: `app/pokedex/**`, `components/pokedex/**`, 도감 목록/상세 화면(PRD §8.4, DESIGN.md §2.3)은 다른 팀원 전담 영역이다. 위 6개 SubAgent는 이 경로를 읽지도 수정하지도 않는다 — 관련 요청이 오면 작업하지 말고 담당 밖임을 알린다.
 - 스키마 변경은 반드시 `DB.md`를 먼저 갱신하고 마이그레이션을 작성한다 — 코드가 먼저, 문서가 나중이 되지 않게 한다.
 - 확률/밸런스 상수(`calc_spawn_rate` 5~30%, `calc_catch_rate` 10~90%, 최종 히든 지역 100%, 전설 3%+실패당 영구 +1%p 등)는 `DB.md`/`PRD.md`에 정의된 값을 그대로 사용한다 — 임의로 조정하지 않는다. 밸런스 변경이 필요하면 두 문서를 먼저 갱신.
 - SubAgent가 여러 파일에 걸친 변경을 제안할 때는 영향받는 Edge Function과 RLS 정책을 함께 점검한다(스폰/포획 로직은 항상 서버 전용이므로).

@@ -314,6 +314,15 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 5. `user_progress.current_city_id` 갱신, 커밋
 6. 커밋 후 `unlock-check` 실행
 
+### 10.1 `move-city` 구현 (마이그레이션 `20260717000000_fn_move_city`)
+
+원자적 락(§10~11)을 JS 런타임에서 보장할 수 없으므로 트랜잭션 코어를 `public.fn_move_city(p_user_id uuid, p_to_city_id int) RETURNS json`(plpgsql, `SECURITY DEFINER`)로 구현하고, Edge Function은 JWT에서 `user_id`를 검증(§20)한 뒤 `service_role`로 이 함수를 rpc 호출하는 얇은 래퍼다. `fn_move_city` EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지) — 유저가 직접 호출 못 하게.
+
+- 락은 `user_progress` 행 `FOR UPDATE` 하나만(§11). `encounter_sessions`는 INSERT라 별도 락 불필요.
+- 검증 실패는 `RAISE EXCEPTION`으로 코드 문자열(`NOT_ADJACENT`/`REGION_LOCKED`/`LEGENDARY_COOLDOWN`/`INVALID_INPUT`/`NO_PROGRESS`)을 message에 담아 던지고, EF가 이를 HTTP 4xx + `error.code`로 매핑.
+- `catch_rate_tier`(§13.1)는 아직 `calc_catch_rate_tier` DB 함수가 없어 `fn_move_city` 내부에서 CASE로 인라인 매핑한다. `catch-attempt` EF 작성 시 `calc_catch_rate_tier`로 추출·공용화 — 그때 이 인라인은 제거.
+- §10 6단계 `unlock-check`는 별도 EF를 만들지 않고, `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입하는 것으로 대체(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 독립 `unlock-check` EF는 §9대로 후속 작업.
+
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`
 2. `status='pending' AND expires_at > now()` 확인, `attempts_used < 3` 확인
