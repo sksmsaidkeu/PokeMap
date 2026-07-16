@@ -4,6 +4,7 @@ build_pokemon_db.py
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # 환경 변수 (secrets)
 .env
