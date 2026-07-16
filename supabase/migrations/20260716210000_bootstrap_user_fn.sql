@@ -1,11 +1,13 @@
 -- GPS 온보딩: profiles + user_progress를 한 트랜잭션으로 원자 생성한다.
 -- supabase-js에 단일 트랜잭션 경로가 없어 DB 함수로 감싼다(DB.md §9, bootstrap-location).
 -- SECURITY DEFINER로 실행돼 RLS(no_direct_write)를 우회한다 — 요청자 검증은 Edge Function이 JWT로 수행한다.
+-- 시작 도시 우선순위: 수동 선택(p_city_id) > GPS 좌표 최근접 > 서울 폴백. 잠긴 섬(§16)은 시작지 후보에서 제외.
 CREATE OR REPLACE FUNCTION "public"."bootstrap_user"(
   "p_user_id" "uuid",
   "p_nickname" "text",
   "p_lat" double precision,
-  "p_lng" double precision
+  "p_lng" double precision,
+  "p_city_id" integer DEFAULT NULL
 )
 RETURNS TABLE("city_id" integer, "city_name" "text", "fallback" boolean)
 LANGUAGE "plpgsql"
@@ -17,8 +19,22 @@ declare
   v_city_name text;
   v_fallback boolean := true;
 begin
-  -- centroid는 point(lng, lat) 순서. 잠긴 섬(§16)에서 시작하지 않도록 육지 도만 후보.
-  if p_lat is not null and p_lng is not null then
+  -- 1) 수동 선택(GPS 실패 시 도→시 직접 선택)이 최우선. 실존하는 육지 시만 허용.
+  if p_city_id is not null then
+    select c.id, c.name
+      into v_city_id, v_city_name
+      from cities c
+      join living_areas la on la.id = c.living_area_id
+      join provinces pr on pr.id = la.province_id
+     where c.id = p_city_id
+       and pr.is_island_endgame = false;
+    if not found then
+      raise exception 'INVALID_CITY';
+    end if;
+    v_fallback := false;
+
+  -- 2) GPS 좌표. centroid는 point(lng, lat) 순서. 잠긴 섬(§16) 제외, 육지 도만 후보.
+  elsif p_lat is not null and p_lng is not null then
     select c.id, c.name
       into v_city_id, v_city_name
       from cities c
@@ -32,7 +48,7 @@ begin
     end if;
   end if;
 
-  -- 좌표 없음/무효 또는 매칭 실패 시 서울특별시(cities.id = 1)로 폴백(PRD §5).
+  -- 3) 좌표 없음/무효 또는 매칭 실패 시 서울특별시(cities.id = 1)로 폴백(PRD §5).
   if v_city_id is null then
     select c.id, c.name into v_city_id, v_city_name from cities c where c.id = 1;
     v_fallback := true;
@@ -59,11 +75,11 @@ begin
 end;
 $$;
 
-ALTER FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision) OWNER TO "postgres";
+ALTER FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision, integer) OWNER TO "postgres";
 
 -- 기본 권한(§baseline ALTER DEFAULT PRIVILEGES)은 anon/authenticated에도 EXECUTE를 주므로 회수.
 -- 임의 p_user_id로 타 유저 프로필 생성을 막기 위해 service_role만 실행 가능(CLAUDE.md §20).
-REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision) FROM PUBLIC;
-REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision) FROM "anon";
-REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision) FROM "authenticated";
-GRANT EXECUTE ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision, integer) FROM "anon";
+REVOKE ALL ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision, integer) FROM "authenticated";
+GRANT EXECUTE ON FUNCTION "public"."bootstrap_user"("uuid", "text", double precision, double precision, integer) TO "service_role";

@@ -78,7 +78,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (typeof parsed !== 'object' || parsed === null) {
     return fail('INVALID_BODY', 400)
   }
-  const body = parsed as { nickname?: unknown; lat?: unknown; lng?: unknown }
+  const body = parsed as { nickname?: unknown; lat?: unknown; lng?: unknown; city_id?: unknown }
 
   const nickname = typeof body.nickname === 'string' ? body.nickname.trim() : ''
   if (nickname.length < 2 || nickname.length > 20) {
@@ -89,17 +89,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const lng = validCoord(body.lng, 180)
   const hasCoords = lat !== null && lng !== null
 
+  // GPS 실패 시 클라이언트가 수동 선택한 시. 유효성(실존/육지)은 DB 함수가 최종 판정한다.
+  const cityId =
+    typeof body.city_id === 'number' && Number.isInteger(body.city_id) && body.city_id > 0
+      ? body.city_id
+      : null
+
   const admin = createClient(supabaseUrl, serviceRoleKey)
   const { data, error } = await admin.rpc('bootstrap_user', {
     p_user_id: userId,
     p_nickname: nickname,
     p_lat: hasCoords ? lat : null,
     p_lng: hasCoords ? lng : null,
+    p_city_id: cityId,
   })
 
   if (error) {
     if (error.message.includes('NICKNAME_TAKEN')) {
       return fail('NICKNAME_TAKEN', 409)
+    }
+    if (error.message.includes('INVALID_CITY')) {
+      return fail('INVALID_CITY', 400)
     }
     console.error(JSON.stringify({ code: 'BOOTSTRAP_FAILED', pg_message: error.message }))
     return fail('BOOTSTRAP_FAILED', 500)
