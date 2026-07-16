@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -323,18 +323,21 @@ export type Database = {
         Row: {
           color: string
           id: number
+          is_endgame_area: boolean
           name: string
           province_id: number
         }
         Insert: {
           color: string
           id: number
+          is_endgame_area?: boolean
           name: string
           province_id: number
         }
         Update: {
           color?: string
           id?: number
+          is_endgame_area?: boolean
           name?: string
           province_id?: number
         }
@@ -706,6 +709,19 @@ export type Database = {
       calc_spawn_rate: { Args: { bst: number }; Returns: number }
       calc_user_tier: { Args: { p_user_id: string }; Returns: string }
       check_endgame_unlock: { Args: { p_user_id: string }; Returns: boolean }
+      fn_bootstrap_location: {
+        Args: { p_lat: number; p_lng: number; p_user_id: string }
+        Returns: Json
+      }
+      fn_catch_attempt: {
+        Args: { p_session_id: string; p_user_id: string }
+        Returns: Json
+      }
+      fn_move_city: {
+        Args: { p_to_city_id: number; p_user_id: string }
+        Returns: Json
+      }
+      fn_session_sweep: { Args: never; Returns: Json }
     }
     Enums: {
       [_ in never]: never
