@@ -2,8 +2,9 @@
 
 // Catch & Encounter 격리 탭 — DESIGN.md §2.2 세로 3단 레이아웃.
 // Result는 별도 라우트가 아닌 같은 탭 안의 오버레이(PRD §8.3~8.4, CLAUDE.md §5).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { animate, motion, useReducedMotion } from 'framer-motion'
 import { catchAttempt } from '@/lib/game/catchAttempt'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
@@ -54,6 +55,95 @@ export default function EncounterClient({
   const [catchCount, setCatchCount] = useState<number | null>(null)
   // 서버 시각과의 하이드레이션 불일치 방지: 마운트 후에만 카운트다운 표시
   const [remainingMs, setRemainingMs] = useState<number | null>(null)
+  // Map 복귀는 페이드아웃 완료 후 라우팅 — 화면이 툭 끊기지 않게(PRD §22)
+  const [leaving, setLeaving] = useState(false)
+  const reduced = useReducedMotion()
+  const mainRef = useRef<HTMLElement>(null)
+  const spriteRef = useRef<HTMLDivElement>(null)
+  const grassRef = useRef<HTMLDivElement>(null)
+  const shutterRef = useRef<HTMLDivElement>(null)
+  const darkenRef = useRef<HTMLDivElement>(null)
+  const flashRef = useRef<HTMLDivElement>(null)
+  const crackRef = useRef<SVGSVGElement>(null)
+
+  // 진입 연출 — 이 컴포넌트는 서버가 세션을 확정한 뒤에만 마운트되므로 낙관적 연출이 아니다(§2).
+  // 전설 분기는 서버가 내려준 isLegendary prop에만 반응(일반 이동에서 오발동 불가, QA §18).
+  // reduced-motion: 셔터/균열/번개/지진/흔들림 전부 생략(PRD §22).
+  useEffect(() => {
+    if (reduced) {
+      // 어두워짐은 연출이 아닌 "유지 상태" — reduced에서도 정적 적용해야 같은 화면을 본다(a11y QA)
+      if (darkenRef.current) darkenRef.current.style.opacity = '0.45'
+      return
+    }
+    const controls = isLegendary
+      ? [
+          darkenRef.current &&
+            animate(darkenRef.current, { opacity: 0.45 }, { duration: 0.8 }),
+          // 섬광 2회/0.9s = 약 2.2회/초 — WCAG 2.3.1(초당 3회) 마진 없음: 키프레임 추가·duration 단축 금지
+          flashRef.current &&
+            animate(
+              flashRef.current,
+              { opacity: [0, 1, 0, 0.7, 0] },
+              { duration: 0.9, delay: 0.3, ease: 'linear' },
+            ),
+          crackRef.current &&
+            animate(
+              crackRef.current,
+              { opacity: [0, 1, 1, 0] },
+              { duration: 1.1, delay: 0.35 },
+            ),
+          // 지진은 컨테이너 transform으로만 — 레이아웃 리플로우 없이 흔든다
+          mainRef.current &&
+            animate(
+              mainRef.current,
+              { x: [0, -8, 8, -6, 6, -3, 3, 0] },
+              { duration: 0.7, delay: 0.3 },
+            ),
+        ]
+      : [
+          shutterRef.current &&
+            animate(
+              shutterRef.current,
+              { opacity: [0, 1, 1, 0] },
+              { duration: 0.5, times: [0, 0.3, 0.55, 1] },
+            ),
+          grassRef.current &&
+            animate(
+              grassRef.current,
+              { skewX: [0, -8, 8, -5, 5, 0] },
+              { duration: 1, ease: 'easeInOut' },
+            ),
+        ]
+    return () => {
+      controls.forEach((c) => c && c.stop())
+      // stop()은 중간 opacity를 남긴다 — reduced 토글 시 전면 오버레이가 화면을 가린 채 고정되지 않게 리셋
+      for (const el of [flashRef.current, shutterRef.current, crackRef.current]) {
+        if (el) el.style.opacity = '0'
+      }
+    }
+  }, [reduced, isLegendary])
+
+  // 빗나감 흔들림 — 서버가 miss를 확정(setMissed)한 뒤에만 재생
+  useEffect(() => {
+    if (!missed || reduced || !spriteRef.current) return
+    const c = animate(
+      spriteRef.current,
+      { x: [0, -10, 10, -7, 7, 0] },
+      { duration: 0.45 },
+    )
+    return () => c.stop()
+  }, [missed, reduced])
+
+  // 포획 성공 펄스 — 서버가 caught를 확정한 뒤에만 재생
+  useEffect(() => {
+    if (phase !== 'caught' || reduced || !spriteRef.current) return
+    const c = animate(
+      spriteRef.current,
+      { scale: [1, 1.18, 1] },
+      { duration: 0.6, ease: 'easeOut' },
+    )
+    return () => c.stop()
+  }, [phase, reduced])
 
   useEffect(() => {
     const tick = () => setRemainingMs(Date.parse(expiresAt) - Date.now())
@@ -106,10 +196,20 @@ export default function EncounterClient({
     }
   }
 
-  const goMap = () => router.push('/map')
+  const goMap = () => setLeaving(true)
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-6">
+    <motion.main
+      ref={mainRef}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: leaving ? 0 : 1 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      // fade는 reduced-motion에서도 유지(PRD §22) — 완료 후에만 라우팅
+      onAnimationComplete={() => {
+        if (leaving) router.push('/map')
+      }}
+      className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-6"
+    >
       {/* 배경 레이어 — 전설 연출(번개/균열)은 motion 담당이 이 레이어 위에 추가 */}
       <div
         aria-hidden
@@ -119,6 +219,70 @@ export default function EncounterClient({
             : 'bg-gradient-to-b from-[#cce8f4] to-[#F0F0F0]' // TODO: 하단을 시(City) 대표 색상으로 동적 매칭(DESIGN.md §2.2)
         }`}
       />
+      {isLegendary ? (
+        <>
+          {/* 하늘 어두워짐: 배경 위·콘텐츠 아래에서 서서히 짙어진 채 유지 */}
+          <div
+            aria-hidden
+            ref={darkenRef}
+            className="pointer-events-none absolute inset-0 -z-10 bg-black opacity-0"
+          />
+          {/* 번개 점멸 */}
+          <div
+            aria-hidden
+            ref={flashRef}
+            className="pointer-events-none absolute inset-0 z-30 bg-white opacity-0"
+          />
+          {/* 화면 균열 */}
+          <svg
+            aria-hidden
+            ref={crackRef}
+            className="pointer-events-none absolute inset-0 z-40 h-full w-full opacity-0"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M50 0 L46 18 L53 31 L44 48 L55 64 L47 82 L52 100"
+              stroke="#fff"
+              strokeWidth="0.7"
+              fill="none"
+            />
+            <path
+              d="M46 18 L31 27 M53 31 L69 40 M44 48 L27 59 M55 64 L72 72"
+              stroke="#fff"
+              strokeWidth="0.4"
+              fill="none"
+            />
+          </svg>
+        </>
+      ) : (
+        <>
+          {/* 풀숲 — reduced-motion에서는 정적 장식으로만 남는다 */}
+          <div
+            aria-hidden
+            ref={grassRef}
+            className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 flex items-end justify-around"
+            style={{ transformOrigin: 'bottom' }}
+          >
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className={`bg-[#3f7d3a] ${i % 2 ? 'h-8 w-14' : 'h-10 w-16'}`}
+                style={{
+                  clipPath:
+                    'polygon(0 100%, 10% 30%, 25% 70%, 40% 10%, 55% 65%, 70% 25%, 85% 60%, 100% 100%)',
+                }}
+              />
+            ))}
+          </div>
+          {/* 화면 셔터 점멸 */}
+          <div
+            aria-hidden
+            ref={shutterRef}
+            className="pointer-events-none absolute inset-0 z-40 bg-black opacity-0"
+          />
+        </>
+      )}
 
       {/* 상단: 좌 포획 가능성 태그 / 우 Player UI 리본 */}
       <div className="flex w-full max-w-md items-start justify-between">
@@ -141,12 +305,16 @@ export default function EncounterClient({
 
       {/* 중앙: 포켓몬 이미지 영역 — TODO: 스프라이트 에셋 확보 시 next/image로 교체 */}
       <div className="flex flex-1 flex-col items-center justify-center gap-2">
-        <div className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full border-2 border-black bg-black/20">
+        <div
+          ref={spriteRef}
+          className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full border-2 border-black bg-black/20"
+        >
           <span className={`text-3xl font-extrabold text-black ${STROKE}`}>
             No.{String(dexNo).padStart(4, '0')}
           </span>
           <span className={`text-xl font-bold text-black ${STROKE}`}>{nameKr}</span>
-          <span className="text-xs text-black/70">
+          {/* STROKE 흰 테두리 — 전설 어두운 배경(darken 0.45)에서도 대비 확보(WCAG 1.4.3) */}
+          <span className={`text-xs text-black/70 ${STROKE}`}>
             {type1}
             {type2 ? ` / ${type2}` : ''}
           </span>
@@ -228,6 +396,6 @@ export default function EncounterClient({
           </button>
         </div>
       </Modal>
-    </main>
+    </motion.main>
   )
 }
