@@ -300,7 +300,7 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 
 | 함수 | 트리거 | 역할 |
 |---|---|---|
-| `bootstrap-location` | 회원가입 직후(GPS 좌표 전달) | 좌표 → 최근접 `cities.centroid` 매칭 → `user_progress` 생성 |
+| `bootstrap-location` | 회원가입 직후(닉네임+GPS 좌표 또는 수동 선택 시 전달) | 닉네임 검증 → 시작 시 확정(수동 선택 > GPS 최근접 > 서울 폴백) → `profiles`+`user_progress` 생성 |
 | `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 최종 히든 지역 — `is_island_endgame=true` 도 또는 `is_endgame_area=true` 생활권 — 은 `check_endgame_unlock` 미충족 시 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `check_endgame_unlock` 평가(§10 6단계) |
 | `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
 | `unlock-check` | 폐기(독립 EF 없음) | `fn_move_city` 6단계 + `fn_catch_attempt` 포획 성공 경로에서 `check_endgame_unlock` 평가로 대체 — 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
@@ -328,14 +328,14 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 - `catch_rate_tier`(§13.1)는 아직 `calc_catch_rate_tier` DB 함수가 없어 `fn_move_city` 내부에서 CASE로 인라인 매핑한다. `catch-attempt` EF 작성 시 `calc_catch_rate_tier`로 추출·공용화 — 그때 이 인라인은 제거.
 - §10 6단계 `unlock-check`는 별도 EF를 만들지 않는 것으로 확정: `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입한다(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 해금 조건이 실제로 바뀌는 유일한 시점은 포획 성공이므로 `fn_catch_attempt` 포획 성공 경로에도 동일 블록을 둔다(마이그레이션 `20260721000000_unlock_check_in_catch`) — 없으면 내륙 마지막 포획 직후 섬 이동이 한 번 거부되는 1이동 지연이 생긴다.
 
-### 10.2 `bootstrap-location` 구현 (마이그레이션 `20260718000000_fn_bootstrap_location`)
+### 10.2 `bootstrap-location` 구현 (마이그레이션 `20260718000000_fn_bootstrap_location`, `20260724000000_bootstrap_nickname_and_manual_city`)
 
-코어는 `public.fn_bootstrap_location(p_user_id uuid, p_lat double precision, p_lng double precision) RETURNS json`(plpgsql, `SECURITY DEFINER`)이고, Edge Function은 JWT에서 `user_id`를 검증(§20)하고 좌표를 범위 검증(둘 다 null이거나 둘 다 한국 근방)한 뒤 `service_role`로 rpc 호출하는 얇은 래퍼다. EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지).
+코어는 `public.fn_bootstrap_location(p_user_id uuid, p_nickname text, p_lat double precision, p_lng double precision, p_city_id int default null) RETURNS json`(plpgsql, `SECURITY DEFINER`)이고, Edge Function은 JWT에서 `user_id`를 검증(§20)하고 닉네임(2~20자)·좌표(둘 다 null이거나 둘 다 한국 근방)·`city_id`(양의 정수 또는 null) 형식만 검증한 뒤 `service_role`로 rpc 호출하는 얇은 래퍼다. EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지). 원래(`20260718000000`) 3-인자 시그니처였다가 로그인 스트림 합류 시 닉네임+수동 선택을 추가하며 4-인자로 교체(구 시그니처는 명시적으로 DROP).
 
-- idempotent: `user_progress` 행이 이미 있으면 좌표를 무시하고 기존 `current_city_id`를 반환(`created:false`). 클라이언트는 가입/로그인 어느 경로에서든 재호출해도 안전하다 — 이메일 확인이 켜진 프로젝트에선 가입 직후 세션이 없어 로그인이 사실상 첫 부트스트랩 경로가 된다.
-- 좌표가 null(GPS 권한 거부/미지원)이면 서울특별시 소속 첫 시로 폴백(CLAUDE.md §6), 아니면 `cities.centroid` 최근접(`<->`) 매칭. 도시 데이터가 없으면 `NO_CITY_DATA`(500).
-- **`profiles` 자동 생성 계약**: `user_progress` FK가 `profiles`를 요구하므로 행이 없으면 `nickname = 'trainer-' || user_id`(uuid 전체 — UNIQUE 충돌 없음)로 선생성한다. 닉네임 설정 화면은 신규 INSERT가 아니라 이 기본값을 UPDATE하는 전제로 만들 것.
-- 동시 호출(더블클릭) 레이스는 `profiles`/`user_progress` INSERT 모두 `on conflict do nothing` 후 재조회로 처리 — 행 락 불필요.
+- idempotent: `user_progress` 행이 이미 있으면 닉네임/좌표/`city_id`를 전부 무시하고 기존 `current_city_id`를 반환(`created:false`) — 재호출로 위치가 갱신되면 `move-city`의 인접성/해금 검증을 우회하는 무료 순간이동이 되므로 절대 갱신하지 않는다.
+- 시작 시 우선순위: `p_city_id`(GPS 실패 시 클라이언트 수동 선택) > GPS 좌표 최근접(`cities.centroid <->`) > 서울특별시 폴백(CLAUDE.md §6). 셋 다 최종 히든 지역(`provinces.is_island_endgame=true` 또는 `living_areas.is_endgame_area=true`)은 후보에서 제외 — `p_city_id`가 잠긴 시를 가리키면 `INVALID_CITY`(400). 도시 데이터가 없으면 `NO_CITY_DATA`(500).
+- **`profiles` 생성**: 클라이언트가 가입 시 입력한 실제 닉네임으로 생성(`INVALID_NICKNAME` 400은 EF가 길이로 선검증, DB는 유일성만 담당). 같은 `user_id` 재시도는 기존 프로필 유지, 다른 유저가 먼저 그 닉네임을 선점했으면 `NICKNAME_TAKEN`(409).
+- 동시 호출(더블클릭) 레이스는 `profiles` INSERT의 `unique_violation` 캐치 + `user_progress` INSERT `on conflict do nothing`으로 처리 — 행 락 불필요.
 
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`

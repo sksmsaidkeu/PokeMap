@@ -1,17 +1,22 @@
-import TitleScreen from '@/components/title/TitleScreen'
-import LoginForm from '@/components/auth/LoginForm'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import LoginScreen from '@/components/auth/LoginScreen'
 
-export default function LoginPage() {
-  return (
-    <main className="relative flex min-h-screen items-center justify-center">
-      <TitleScreen />
-      <div className="relative z-10 w-full max-w-sm space-y-4 rounded-lg border border-white/10 bg-black/40 p-6 backdrop-blur-sm">
-        <h1 className="text-2xl font-bold text-[#ede6d6]">PokeMap 로그인</h1>
-        <p className="text-sm text-[#ede6d6]/60">
-          가입 시 GPS로 시작 위치가 정해집니다(PRD §5).
-        </p>
-        <LoginForm />
-      </div>
-    </main>
-  )
+export default async function LoginPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user) {
+    // 계정은 생성됐지만 bootstrap-location이 실패한 채 끊긴 세션(예: 닉네임 중복 재시도 중 이탈)이면
+    // user_progress가 없다 — 그 상태로 /map에 보내면 /map이 다시 /login으로 돌려보내 무한 리다이렉트가 된다.
+    const { data: progress } = await supabase
+      .from('user_progress')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (progress) redirect('/map')
+  }
+
+  return <LoginScreen />
 }

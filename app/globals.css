@@ -15,3 +15,60 @@
   --line-slate: #3e5273;
   --shadow: #04060c;
 }
+
+/* 로그인 카드용 몬스터볼 장식(main 브랜치 포팅, DESIGN.md §2.1) */
+.pokeball {
+  border-radius: 9999px;
+  border: 3px solid #111;
+  box-sizing: border-box;
+  background: linear-gradient(
+    to bottom,
+    #e3350d 0 calc(50% - 2px),
+    #111 calc(50% - 2px) calc(50% + 2px),
+    #f7f7f7 calc(50% + 2px) 100%
+  );
+  position: relative;
+  display: inline-block;
+}
+
+.pokeball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #111;
+}
+
+@keyframes pokemap-fall {
+  0% {
+    transform: translateY(-15vh) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translateY(115vh) rotate(360deg);
+    opacity: 0.65;
+  }
+}
+
+.falling-item {
+  position: absolute;
+  top: 0;
+  animation-name: pokemap-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .falling-item {
+    display: none;
+  }
+}
