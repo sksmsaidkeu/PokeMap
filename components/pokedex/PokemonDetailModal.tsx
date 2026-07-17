@@ -10,10 +10,19 @@ type PokemonDetailModalProps = {
   onClose: () => void;
 };
 
-const PLACEHOLDER = "준비 중"; // height/weight/ability는 아직 DB에 값이 없어 플레이스홀더 처리
+const PLACEHOLDER = "준비 중"; // 일부 최신세대는 PokeAPI에 값 자체가 없어 폴백 처리
 
 function dexLabel(dexNo: number): string {
   return `No.${String(dexNo).padStart(4, "0")}`;
+}
+
+// height_dm/weight_hg는 PokeAPI 단위(decimetre/hectogram) 그대로 저장 — 표시 시 m/kg로 환산(DB.md §4.7)
+function formatHeight(heightDm: number | null): string {
+  return heightDm == null ? PLACEHOLDER : `${(heightDm / 10).toFixed(1)}m`;
+}
+
+function formatWeight(weightHg: number | null): string {
+  return weightHg == null ? PLACEHOLDER : `${(weightHg / 10).toFixed(1)}kg`;
 }
 
 // 몬스터볼 아이콘 — 별도 애셋 없이 CSS만으로 구성(적/백/흑 조합)
@@ -145,9 +154,9 @@ export function PokemonDetailModal({ card, onClose }: PokemonDetailModalProps) {
 
         {/* 중간 박스: 요약 정보 2단 그리드(회색 구분선) */}
         <dl className="grid grid-cols-2 divide-x divide-y divide-zinc-200 overflow-hidden rounded-xl border-2 border-black bg-white shadow-[4px_4px_0_0_#000]">
-          <InfoCell label="키" value={PLACEHOLDER} />
-          <InfoCell label="몸무게" value={PLACEHOLDER} />
-          <InfoCell label="특성" value={PLACEHOLDER} />
+          <InfoCell label="키" value={formatHeight(species.height_dm)} />
+          <InfoCell label="몸무게" value={formatWeight(species.weight_hg)} />
+          <InfoCell label="특성" value={species.primary_ability ?? PLACEHOLDER} />
           <InfoCell label="종족값 합" value={String(species.bst)} />
           <InfoCell
             label="최초 포획"
