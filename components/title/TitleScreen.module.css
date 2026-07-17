@@ -1,7 +1,14 @@
 .stage {
-  position: fixed;
+  position: absolute;
   inset: 0;
   overflow: hidden;
+  /* isolation: 하위 .grain의 mix-blend-mode(overlay)가 타이틀 화면 내부에서만 블렌드되게
+     가둔다(뒤 로그인 카드와 실시간 블렌드 방지). translateZ(0): 이 무거운 화면(그라디언트 여러 겹
+     + drop-shadow 필터 + SVG)을 GPU 텍스처로 한 번만 래스터화해 backing store에 캐시. 이 둘이
+     없으면 페이드아웃 시 매 프레임 전체 재래스터화로 opacity 보간이 뚝 끊긴다(headed Chrome
+     한정 재현, 소프트웨어 렌더는 무관). 캐시된 텍스처의 alpha만 바꾸면 페이드가 매끄럽다. */
+  isolation: isolate;
+  transform: translateZ(0);
   background:
     radial-gradient(ellipse 42vw 60vh at 92% 10%, rgba(230, 225, 255, 0.2), transparent 62%),
     radial-gradient(ellipse 73vw 83vh at 30% 8%, rgba(244, 193, 92, 0.1), transparent 60%),

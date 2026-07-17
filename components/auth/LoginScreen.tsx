@@ -1,38 +1,33 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import TitleScreen from '@/components/title/TitleScreen'
 import FallingBackground from './FallingBackground'
 import LoginForm from './LoginForm'
 
-const INTRO_MS = 3000
+const HOLD_MS = 3000
+const FADE_SEC = 2.5
 
-// 포스터 스타일 TitleScreen을 잠깐 보여준 뒤 카드형 로그인 화면으로 크로스페이드.
-// 언마운트 대신 opacity/pointer-events만 토글해 전환이 끊기지 않게 한다.
+// 로그인 카드는 처음부터 완전히 그려진 채로 시작화면 아래 깔려 있고, 시작화면만 점점
+// 투명해지며 사라져 그 아래를 드러낸다(디졸브). CSS `transition` 클래스 토글 방식은
+// (원인 미상으로) 일부 환경에서 트랜지션 없이 그대로 스냅되는 문제가 있어, 이 프로젝트에서
+// 이미 검증된 framer-motion(EncounterClient와 동일 라이브러리)의 JS 기반 애니메이션으로 교체.
 export default function LoginScreen() {
-  const [introDone, setIntroDone] = useState(false)
+  const [introVisible, setIntroVisible] = useState(true)
+  const reducedMotion = useReducedMotion()
 
   useEffect(() => {
-    const t = setTimeout(() => setIntroDone(true), INTRO_MS)
+    const t = setTimeout(() => setIntroVisible(false), HOLD_MS)
     return () => clearTimeout(t)
   }, [])
 
   return (
     <main className="relative min-h-screen overflow-hidden">
+      {/* 로그인 카드: 시작화면이 걷히는 동안 포커스/클릭이 닿지 않게 inert 처리 */}
       <div
-        aria-hidden={introDone}
-        className={`absolute inset-0 transition-opacity duration-700 motion-reduce:transition-none ${
-          introDone ? 'pointer-events-none opacity-0' : 'opacity-100'
-        }`}
-      >
-        <TitleScreen />
-      </div>
-
-      <div
-        aria-hidden={!introDone}
-        className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-[#cce8f4] to-[#e9f6fb] p-4 transition-opacity duration-700 motion-reduce:transition-none ${
-          introDone ? 'opacity-100' : 'pointer-events-none opacity-0'
-        }`}
+        inert={introVisible || undefined}
+        className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-[#cce8f4] to-[#e9f6fb] p-4"
       >
         <FallingBackground />
         <div className="relative z-10 w-full max-w-sm rounded-3xl border-4 border-black bg-white p-6 shadow-[0_8px_0_0_rgba(0,0,0,0.15)]">
@@ -44,6 +39,18 @@ export default function LoginScreen() {
           <LoginForm />
         </div>
       </div>
+
+      {/* 시작화면: 로그인 카드 위에 덮여 있다가 점점 투명해지며 사라짐 */}
+      <motion.div
+        aria-hidden={!introVisible}
+        initial={false}
+        animate={{ opacity: introVisible ? 1 : 0 }}
+        transition={{ duration: reducedMotion ? 0 : FADE_SEC, ease: 'easeInOut' }}
+        style={{ pointerEvents: introVisible ? 'auto' : 'none', willChange: 'opacity' }}
+        className="absolute inset-0 z-20"
+      >
+        <TitleScreen />
+      </motion.div>
     </main>
   )
 }
