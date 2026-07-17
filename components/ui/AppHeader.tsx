@@ -16,6 +16,19 @@ const TIERS: Record<UserTier, { label: string; badgeClass: string }> = {
   master: { label: '마스터볼', badgeClass: 'bg-purple-600' },
 }
 
+const TIER_BY_LABEL: Record<string, UserTier> = {
+  몬스터볼: 'monster',
+  슈퍼볼: 'super',
+  하이퍼볼: 'hyper',
+  마스터볼: 'master',
+}
+
+// calc_user_tier RPC는 표시용 한글 라벨을 반환(DB.md §6.5) — 배지 키로 역매핑.
+// rpc 실패/미조회 시 최저 등급 폴백(헤더가 페이지 렌더를 막을 이유는 없다).
+export function tierFromLabel(label: string | null | undefined): UserTier {
+  return TIER_BY_LABEL[label ?? ''] ?? 'monster'
+}
+
 export type AppHeaderProps = {
   trainerName: string
   tier: UserTier

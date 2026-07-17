@@ -32,9 +32,10 @@
 
 ## 🔒 막힘 — 메인·팀 협의 또는 다른 브랜치 의존
 
-### 4. 상세 팝업 실데이터(키/몸무게/특성/도감설명)
-- [ ] `pokemon_species`에 `height_dm`/`weight_hg`/`primary_ability`/`flavor_text` 컬럼 + 데이터
-- 막힘: 스키마 변경(마이그레이션) + PokeAPI 수집 → 팀 협의. 현재 "준비 중" 플레이스홀더로 대기
+### 4. 상세 팝업 실데이터(키/몸무게/특성/도감설명) ✅ 완료
+- [x] `pokemon_species`에 `height_dm`/`weight_hg`/`primary_ability`/`flavor_text` 컬럼 + 데이터
+- PokeAPI에서 399종 전체 수집(`fetch_pokemon_details.py`), 마이그레이션으로 로컬 검증 후 원격 반영
+- 9세대(스칼렛/바이올렛) 31종은 PokeAPI에 한국어 원문이 없어 AI가 영문 기반으로 임시 번역(공식 말투 맞춤) — PokeAPI가 한국어를 채우면 교체 예정
 
 ### 5. 비로그인 접근 차단
 - [ ] `/pokedex` 미로그인 접근 시 로그인으로 리다이렉트(PRD §5)
