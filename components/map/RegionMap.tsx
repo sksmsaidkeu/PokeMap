@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import rawMap from '@/files/korea_map_data.min.json'
 import {
   createProjection,
@@ -58,10 +58,10 @@ export default function RegionMap({
     return {
       c,
       viewBox: `${c.x - vw / 2} ${c.y - vh / 2} ${vw} ${vh}`,
-      gap: vh * 0.16, // 마커에서 화살표까지 거리
-      size: vh * 0.05, // 화살표 크기
+      gap: vh * 0.11, // 마커에서 화살표까지 거리(4차 검증: 더 촘촘하게)
+      size: vh * 0.035, // 화살표 크기(4차 검증: 더 작게)
       markerR: vh * 0.022,
-      stroke: vw * 0.0012,
+      stroke: vw * 0.0022, // 4차 검증: 시군 경계가 끊겨 보이던 것 보정, 더 두껍게
     }
   }, [playerCentroid])
 
@@ -79,8 +79,11 @@ export default function RegionMap({
       aria-label="지역 지도"
       aria-busy={moving}
     >
-      {/* 폴리곤: 클릭 불가(오직 화살표로만 이동) */}
-      <g fillRule="evenodd" stroke="#ffffff" strokeWidth={view.stroke} pointerEvents="none">
+      {/* 폴리곤 채우기: 클릭 불가(오직 화살표로만 이동). 인접 시군은 각자 독립된 폴리곤이라
+          경계 좌표가 완전히 일치하지 않는다 — 채우기와 테두리를 같은 pass에서 그리면 나중에
+          그려지는 이웃의 fill이 앞서 그려진 이웃의 테두리 픽셀을 살짝 덮어써 경계가 끊겨
+          보인다. fill을 전부 먼저 깔고 테두리는 전부 그 위에 별도 pass로 그려서 방지(4차 검증). */}
+      <g fillRule="evenodd" pointerEvents="none">
         {SHAPES.map((s, i) => (
           <path key={i} d={s.d} fill={s.color} />
         ))}
@@ -88,11 +91,16 @@ export default function RegionMap({
           <circle key={i} cx={s.p.x} cy={s.p.y} r={view.markerR * 1.4} fill={s.color} />
         ))}
       </g>
+      <g fill="none" stroke="#ffffff" strokeWidth={view.stroke} strokeLinejoin="round" pointerEvents="none">
+        {SHAPES.map((s, i) => (
+          <path key={`border-${i}`} d={s.d} />
+        ))}
+      </g>
 
       {legendary && <LegendaryMark p={legendary} r={view.markerR * 1.6} />}
 
-      {/* 플레이어 마커 */}
-      <circle cx={view.c.x} cy={view.c.y} r={view.markerR} fill="#111827" stroke="#ffffff" strokeWidth={view.markerR * 0.25} />
+      {/* 플레이어 마커: 몬스터볼 모양(4차 검증) */}
+      <PlayerMark c={view.c} r={view.markerR} />
 
       {neighbors.map((n) => (
         <Arrow
@@ -183,11 +191,12 @@ function Arrow({
           pointerEvents="none"
         />
       )}
+      {/* 원형 버튼 배경(4차 검증: 세련되게) — 헤더의 흰 원+검은 테두리 버튼과 통일된 스타일 */}
+      <circle cx={center.x} cy={center.y} r={size * 1.15} fill="#ffffff" stroke="#111827" strokeWidth={size * 0.12} />
       <polygon
-        points={arrowPoints(center, dir, size)}
-        fill={locked ? '#9ca3af' : '#111827'}
-        stroke="#ffffff"
-        strokeWidth={size * 0.12}
+        points={arrowPoints(center, dir, size * 0.62)}
+        fill={locked ? '#9ca3af' : '#e3350d'}
+        strokeLinejoin="round"
       />
       {locked && (
         <text
@@ -200,6 +209,25 @@ function Arrow({
           🔒
         </text>
       )}
+    </g>
+  )
+}
+
+// 플레이어 위치 마커: 몬스터볼 모양(4차 검증 — 기존 단색 원 대신 포켓몬스러운 시각화)
+function PlayerMark({ c, r }: { c: Point; r: number }) {
+  const clipId = useId()
+  return (
+    <g aria-hidden pointerEvents="none">
+      <clipPath id={clipId}>
+        <circle cx={c.x} cy={c.y} r={r} />
+      </clipPath>
+      <g clipPath={`url(#${clipId})`}>
+        <rect x={c.x - r} y={c.y - r} width={r * 2} height={r} fill="#e3350d" />
+        <rect x={c.x - r} y={c.y} width={r * 2} height={r} fill="#f7f7f7" />
+      </g>
+      <circle cx={c.x} cy={c.y} r={r} fill="none" stroke="#111827" strokeWidth={r * 0.18} />
+      <line x1={c.x - r} y1={c.y} x2={c.x + r} y2={c.y} stroke="#111827" strokeWidth={r * 0.16} />
+      <circle cx={c.x} cy={c.y} r={r * 0.34} fill="#f7f7f7" stroke="#111827" strokeWidth={r * 0.14} />
     </g>
   )
 }

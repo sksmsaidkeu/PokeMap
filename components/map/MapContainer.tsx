@@ -67,8 +67,10 @@ export function MapContainer({
     [locked, neighbors, onMoveResult, router],
   )
 
+  // min-h-0: flex-1 자식은 기본 min-height:auto라 SVG의 viewBox 종횡비만큼 부풀어
+  // 뷰포트 밖으로 넘칠 수 있다 — 0으로 리셋해 실제 배정된 flex 공간에 맞게 줄어들게 함.
   return (
-    <div className="relative flex-1">
+    <div className="relative min-h-0 flex-1">
       <AnimatedRegionMap
         playerCentroid={playerCentroid}
         neighbors={neighbors}
