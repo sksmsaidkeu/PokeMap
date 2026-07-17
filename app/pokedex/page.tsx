@@ -49,7 +49,7 @@ export default async function PokedexPage({
 
   return (
     <main className={`mx-auto max-w-4xl px-4 pb-8 ${user ? "pt-20" : "pt-8"}`}>
-      {header}
+      {user && <AppHeader trainerName={trainerName} tier={tier} totalSpecies={totalSpecies} />}
       <h1 className="mb-6 text-xl font-bold">도감</h1>
       <PokedexBrowser groups={groups} caughtCount={caughtCount ?? 0} />
     </main>

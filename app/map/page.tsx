@@ -137,7 +137,9 @@ export default async function MapPage() {
     complete && legendaryCity ? parsePoint(legendaryCity.centroid) : null
 
   return (
-    <main className="flex min-h-screen flex-col">
+    // h-screen(고정) — min-h-screen(하한선)이면 지도 SVG의 viewBox 종횡비가
+    // flex-1 자식의 min-h-0과 맞물려도 컨테이너 자체가 내용에 맞춰 늘어나 버린다.
+    <main className="flex h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
         tier={tierFromLabel(tierLabel)}
