@@ -243,6 +243,28 @@ export default function EncounterClient({
 
   const goMap = () => setLeaving(true)
 
+  // 실루엣 해제 = 포획 확정 시점과 동일 기준 — 도망(fled)은 끝까지 비공개(PRD §8.5)
+  const revealed = phase === 'caught'
+
+  // 스페이스=포획 시도, 엔터=결과 확인/나가기. 이 화면엔 텍스트 입력 필드가 없지만 방어적으로 가드.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (phase === 'active' && !pending && attemptsLeft > 0) handleThrow()
+      } else if (e.code === 'Enter') {
+        if (phase !== 'active') goMap()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // handleThrow/goMap 재생성은 phase/pending/attemptsLeft 변화와 항상 동기화되므로 안전 —
+    // deps에 넣으면 매 렌더 리스너를 재등록해 불필요한 churn만 늘어난다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, pending, attemptsLeft])
+
   return (
     <motion.main
       ref={mainRef}
@@ -354,7 +376,12 @@ export default function EncounterClient({
           ref={spriteRef}
           className="relative h-48 w-48 rounded-full border-2 border-black bg-black/20"
         >
-          <PokemonSprite dexNo={dexNo} alt={nameKr} fallbackClass="bg-zinc-400" />
+          <PokemonSprite
+            dexNo={dexNo}
+            alt={revealed ? nameKr : '???'}
+            silhouette={!revealed}
+            fallbackClass="bg-zinc-400"
+          />
           {/* 포획 성공 반짝임 ring — 평상시 opacity 0, caught 확정 시에만 imperative animate로 노출 */}
           <div
             aria-hidden
@@ -364,8 +391,14 @@ export default function EncounterClient({
         </div>
         {/* STROKE 흰 테두리 — 전설 어두운 배경(darken 0.45)에서도 대비 확보(WCAG 1.4.3) */}
         <span className={`text-xs text-black/70 ${STROKE}`}>
-          {type1}
-          {type2 ? ` / ${type2}` : ''}
+          {revealed ? (
+            <>
+              {type1}
+              {type2 ? ` / ${type2}` : ''}
+            </>
+          ) : (
+            '???'
+          )}
         </span>
         {missed && phase === 'active' && (
           <p role="status" className={`text-sm font-bold text-black ${STROKE}`}>
@@ -388,9 +421,9 @@ export default function EncounterClient({
         }}
       >
         <span className="border-r-2 border-black px-4 font-mono font-bold">
-          No.{String(dexNo).padStart(4, '0')}
+          {revealed ? `No.${String(dexNo).padStart(4, '0')}` : '???'}
         </span>
-        <span className="px-4 text-lg font-extrabold">{nameKr}</span>
+        <span className="px-4 text-lg font-extrabold">{revealed ? nameKr : '???'}</span>
       </div>
 
       {/* 하단: 타이머 + 남은 시도 + 포획하기 화살표 리본 버튼 */}
@@ -433,7 +466,7 @@ export default function EncounterClient({
               {/* TODO: 도 100% 달성 배너(PRD §8.4) — 판정 데이터가 응답에 없어 이번 슬라이스 스킵 */}
             </>
           ) : (
-            <p className="text-lg font-extrabold">{nameKr}은(는) 도망쳤다...</p>
+            <p className="text-lg font-extrabold">{revealed ? nameKr : '???'}은(는) 도망쳤다...</p>
           )}
           <button
             type="button"

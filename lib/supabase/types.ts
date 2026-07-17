@@ -789,7 +789,7 @@ export type Database = {
       calc_catch_rate: { Args: { bst: number }; Returns: number }
       calc_catch_rate_tier: { Args: { rate: number }; Returns: string }
       calc_legendary_catch_rate: {
-        Args: { fail_visits: number }
+        Args: { fail_visits: number; p_province_id: number; p_user_id: string }
         Returns: number
       }
       calc_session_catch_tier: {

@@ -38,7 +38,8 @@
 
 ### 1. 지도 확대 레벨 세분화 🟢 — 시각 배율만
 - [ ] `ZOOM` 고정상수(0.28) → 조절 가능한 값으로, 화면 배율만 확장(clamp 상하한)
-- 확정: 이동 가능 목적지(시/군/구 단위, `city_connections`)는 그대로 — 이동 단위 세분화(스키마 변경)는 이번 스코프 아님
+- ~~확정: 이동 가능 목적지(시/군/구 단위, `city_connections`)는 그대로 — 이동 단위 세분화(스키마 변경)는 이번 스코프 아님~~
+- **번복(2026-07-17, 사용자 확정)**: 광역시/특별시 7곳(서울/부산/대구/인천/광주/대전/울산, 세종 제외) 한정으로 이동 단위 세분화 진행 — `feat/map-encounter-improvements` 브랜치에서 마이그레이션 `20260727000000_metro_subzones.sql`로 구현(DB.md §4.5 참고). 시 전체를 4구역으로 나누되 동일 `living_area_id` 공유 → 스폰 풀은 그대로, `fn_move_city`/`fn_bootstrap_location` 코드 변경 없음
 - 변경 파일: `components/map/RegionMap.tsx`(zoom prop화), `MapContainer.tsx`(zoom state), `AnimatedRegionMap.tsx`(passthrough)
 
 ### 2. 이동 UI 크기 축소 🟢

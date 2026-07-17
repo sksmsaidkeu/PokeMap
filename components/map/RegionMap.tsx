@@ -263,7 +263,7 @@ export default function RegionMap({
             key={l.cityId}
             x={label.x}
             y={label.y}
-            fontSize={view.markerR * 2}
+            fontSize={view.markerR * 1.4}
             name={l.name}
             onClick={onLabelClick ? () => onLabelClick(l.cityId) : undefined}
           />
@@ -272,6 +272,11 @@ export default function RegionMap({
     </svg>
   )
 }
+
+// 이름 길이에 구조적 상한 없이 렌더하면 향후 더 긴 라벨/좁은 뷰포트(plan.md 360px 최소폭)에서
+// 옆 화살표·폴리곤 경계와 겹칠 수 있다 — 현재 최장 이름(8자, 예: "인천 서부·강화")은 안 건드리고
+// 그보다 긴 이름만 textLength로 폭을 압축(clamp)하는 안전망.
+const MAX_LABEL_CHARS = 10
 
 function Label({
   x,
@@ -286,6 +291,8 @@ function Label({
   name: string
   onClick?: () => void
 }) {
+  // ponytail: 0.6은 한글 글자폭 근사치(실측 대신 고정 계수) — 실제 폰트 기준 재보정 필요해지면 조정
+  const clampWidth = name.length > MAX_LABEL_CHARS ? fontSize * MAX_LABEL_CHARS * 0.6 : undefined
   return (
     <text
       x={x}
@@ -296,6 +303,8 @@ function Label({
       stroke="#ffffff"
       strokeWidth={fontSize * 0.15}
       paintOrder="stroke"
+      textLength={clampWidth}
+      lengthAdjust={clampWidth ? 'spacingAndGlyphs' : undefined}
       style={{ userSelect: 'none', cursor: onClick ? 'pointer' : undefined }}
       role={onClick ? 'button' : undefined}
       aria-label={onClick ? `${name} 정보 보기` : undefined}
