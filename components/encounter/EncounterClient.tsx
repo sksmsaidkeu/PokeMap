@@ -8,6 +8,7 @@ import { animate, motion, useReducedMotion } from 'framer-motion'
 import { catchAttempt } from '@/lib/game/catchAttempt'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
+import { encounterBackground } from '@/components/encounter/typeColors'
 
 export type EncounterClientProps = {
   sessionId: string
@@ -217,10 +218,10 @@ export default function EncounterClient({
       <div
         aria-hidden
         className={`absolute inset-0 -z-10 ${
-          isLegendary
-            ? 'bg-gradient-to-b from-[#3a4a57] to-[#181f26]' // 전설: 하늘색 톤을 어둡게
-            : 'bg-gradient-to-b from-[#cce8f4] to-[#F0F0F0]' // TODO: 하단을 시(City) 대표 색상으로 동적 매칭(DESIGN.md §2.2)
+          isLegendary ? 'bg-gradient-to-b from-[#3a4a57] to-[#181f26]' : '' // 전설: 하늘색 톤을 어둡게
         }`}
+        // 일반 조우는 야생 포켓몬 타입(type1/type2) 배색 — 정적 이미지 없이 CSS 그라디언트로만 표현
+        style={isLegendary ? undefined : { backgroundImage: encounterBackground(type1, type2) }}
       />
       {isLegendary ? (
         <>
