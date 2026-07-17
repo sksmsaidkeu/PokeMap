@@ -92,6 +92,8 @@ Index: `idx_provinces_region ON provinces(region_id)`
 
 Constraint: `UNIQUE(province_id, name)`
 
+`is_endgame_area`: 소속 도 전체가 아니라 **생활권 하나만** 최종 히든 지역으로 취급할 때 사용(§16). `provinces.is_island_endgame`은 도 전체가 엔드게임인 제주도 케이스만 표현 가능한데, 울릉도·독도(경상북도)와 옹진군(인천광역시)은 실제 행정구역상 별도 도가 아니라 정상 도에 속한 생활권 하나뿐이라 이 컬럼으로 표시한다. 소속 도의 나머지 생활권은 §14 그대로 이동 제한이 없다.
+
 ### 4.5 `cities`
 | 컬럼 | 타입 | 제약 |
 |---|---|---|
@@ -258,9 +260,15 @@ $$ LANGUAGE sql IMMUTABLE;
 ```
 
 ### 6.4 `check_endgame_unlock(p_user_id uuid) RETURNS boolean`
-`is_island_endgame=false`인 모든 도가 100% 포획 완료(`v_user_province_progress`)이면 true — 제주도/울릉도·독도 해금 조건(`PokeMap_MainSystem.md` §2). 육지 도는 해금 조건 자체가 없어(§14) 이 함수의 대상이 아니다.
+`is_island_endgame=false`인 모든 도가 100% 포획 완료(`v_user_province_progress`)이면 true — 제주도 해금 조건(`PokeMap_MainSystem.md` §2). 육지 도는 해금 조건 자체가 없어(§14) 이 함수의 대상이 아니다.
 
-### 6.5 `calc_user_tier(p_user_id uuid) RETURNS text`
+이 결과는 `provinces.is_island_endgame=true`인 도뿐 아니라 `living_areas.is_endgame_area=true`인 생활권(울릉권/옹진군, §16)의 이동 가능 여부에도 동일하게 사용된다 — 게이트 조건 자체는 하나(`check_endgame_unlock`)이고, 무엇을 잠그느냐(도 전체 vs 생활권 하나)만 다르다.
+
+### 6.5 `bootstrap_user(p_user_id uuid, p_nickname text, p_lat double precision, p_lng double precision) RETURNS TABLE(city_id int, city_name text, fallback boolean)`
+
+GPS 온보딩용. `SECURITY DEFINER`(owner=postgres)로 RLS를 우회해 `profiles`와 `user_progress`를 한 트랜잭션으로 생성한다(`bootstrap-location` Edge Function 전용, service_role만 EXECUTE — anon/authenticated 권한은 회수). 시작 도시는 좌표가 유효하면 육지 도의 최근접 `centroid`(`point(lng, lat)` 순서), 아니면 서울(id=1). `profiles`는 같은 `user_id` 재시도면 멱등(기존 유지), 다른 유저가 닉네임을 선점했으면 `NICKNAME_TAKEN` 예외. `fallback`은 서울 기본값으로 폴백했는지 여부.
+
+### 6.6 `calc_user_tier(p_user_id uuid) RETURNS text`
 전체 포켓몬(도 구분 없이) 대비 유저 포획률로 등급 산출. 임계값은 가정치이며 밸런스 조정 시 `PRD.md` §14 갱신 필요.
 ```sql
 CREATE FUNCTION calc_user_tier(p_user_id uuid) RETURNS text AS $$
@@ -376,7 +384,7 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 
 ## 14. Unlock 계산
 
-육지 도(`is_island_endgame=false`)는 해금 조건이 없다 — 인접 시로 이동 가능하면 도 경계와 무관하게 바로 이동된다. 해금 개념은 §16 최종 히든 지역(섬)에만 남아 있다.
+육지 도(`is_island_endgame=false`)는 해금 조건이 없다 — 인접 시로 이동 가능하면 도 경계와 무관하게 바로 이동된다. 해금 개념은 §16 최종 히든 지역(섬 지역 도 전체, 그리고 정상 도 안에 섞여 있는 엔드게임 생활권)에만 남아 있다.
 
 ## 15. Legendary 계산
 
@@ -385,7 +393,9 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 - 포획 확률 = `calc_legendary_catch_rate(legendary_pity.fail_visits)`, 3회 시도 내 미포획 시 `legendary_pity.fail_visits += 1`, `legendary_cooldowns.next_available_at = now() + 1h`.
 - 포획 성공 시 더 이상 해당 도의 전설 관련 카운터를 갱신할 필요 없음(재도전 없음).
 
-## 16. 최종 히든 지역 (제주도 / 울릉도·독도)
+## 16. 최종 히든 지역 (제주도 / 울릉도·독도·옹진군)
+
+최종 히든 지역 게이트는 **두 단계**로 존재한다 — 도 전체가 엔드게임인 경우(`provinces.is_island_endgame`)와, 정상 도 안에 엔드게임 전용 생활권 하나만 섞여 있는 경우(`living_areas.is_endgame_area`, §4.4).
 
 - 최종 히든 지역은 두 층위: 도 전체(`provinces.is_island_endgame=true` — 제주도)와 생활권 단위(`living_areas.is_endgame_area=true` — 울릉권 37, 옹진군 36). 두 경우 모두 `fn_move_city`가 `check_endgame_unlock` 미충족 시 `REGION_LOCKED`로 거부한다(마이그레이션 `20260722000000`).
 - `check_endgame_unlock`: `is_island_endgame=false`인 모든 도가 100% 완료되어야 해금. 진행률 집계(§7 뷰)는 endgame 생활권을 제외하므로 순환 의존이 없다.
