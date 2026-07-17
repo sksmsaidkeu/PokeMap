@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
+import { MapContainer, type LatLng, type Neighbor, type CityLabel, type Zone } from '@/components/map/MapContainer'
 import { AppHeader } from '@/components/ui/AppHeader'
 import { tierFromLabel } from '@/lib/game/tier'
 
@@ -11,6 +11,13 @@ function parsePoint(raw: unknown): LatLng {
   if (!m) throw new Error(`parsePoint: invalid centroid value: ${String(raw)}`)
   return { lon: Number(m[1]), lat: Number(m[2]) }
 }
+
+// 광역시 구역 분할(migration 20260727000000)로 living_area_id 1~7만 구역A/B/C/D 4개 시가
+// 한 living_area_id를 공유하게 됐다. 다른 생활권도 원래 여러 시/군/구가 living_area_id 하나를
+// 공유하는 게 일반적이라(예: 10개 시 묶음, region_spawn_pool 배정 단위) living_area_id 동일성만
+// 으로 분리하면 이 migration과 무관한 모든 도시의 화살표 배정까지 바뀐다 — 정확히 이 7개
+// 광역시만 대상으로 한정해 그 외 도시는 기존 동작(전체 이웃이 assignDirs 대상)을 그대로 유지.
+const METRO_LIVING_AREA_IDS = new Set([1, 2, 3, 4, 5, 6, 7])
 
 const DIR_ANGLE: Record<Neighbor['dir'], number> = {
   right: 0,
@@ -69,7 +76,7 @@ export default async function MapPage() {
     await Promise.all([
       supabase
         .from('cities')
-        .select('centroid, living_areas!inner(province_id)')
+        .select('name, centroid, living_area_id, living_areas!inner(province_id)')
         .eq('id', currentCityId)
         .single(),
       supabase.from('v_city_neighbors').select('neighbor_id').eq('city_id', currentCityId),
@@ -87,12 +94,12 @@ export default async function MapPage() {
     .map((r) => r.neighbor_id)
     .filter((id): id is number => id != null)
 
-  // 이웃 시들의 centroid + 소속 도(섬 엔드게임 여부)를 단일 쿼리로 조인(N+1 금지, §21)
+  // 이웃 시들의 centroid + 소속 생활권/도(섬 엔드게임 여부)를 단일 쿼리로 조인(N+1 금지, §21)
   const { data: neighborCities } = neighborIds.length
     ? await supabase
         .from('cities')
         .select(
-          'id, centroid, living_areas!inner(province_id, is_endgame_area, provinces!inner(is_island_endgame))',
+          'id, name, centroid, living_area_id, living_areas!inner(province_id, is_endgame_area, provinces!inner(is_island_endgame))',
         )
         .in('id', neighborIds)
     : { data: [] }
@@ -100,17 +107,44 @@ export default async function MapPage() {
   // 해금 행은 check_endgame_unlock 충족 시 일괄 삽입되므로 행 존재 자체가 "내륙 100%" 신호(DB.md §16)
   const endgameUnlocked = unlockedProvinces.size > 0
 
-  const neighbors: Neighbor[] = assignDirs(
-    playerCentroid,
-    (neighborCities ?? []).map((c) => ({
-      cityId: c.id,
-      centroid: parsePoint(c.centroid),
-      // 최종 히든 지역(도 단위 제주 / 생활권 단위 울릉권·옹진군)만 잠금, 육지 도는 항상 이동 가능
-      locked:
-        (c.living_areas.provinces.is_island_endgame || c.living_areas.is_endgame_area) &&
-        !endgameUnlocked,
-    })),
-  )
+  const neighborsWithLock = (neighborCities ?? []).map((c) => ({
+    cityId: c.id,
+    name: c.name,
+    livingAreaId: c.living_area_id,
+    centroid: parsePoint(c.centroid),
+    // 최종 히든 지역(도 단위 제주 / 생활권 단위 울릉권·옹진군)만 잠금, 육지 도는 항상 이동 가능
+    locked:
+      (c.living_areas.provinces.is_island_endgame || c.living_areas.is_endgame_area) &&
+      !endgameUnlocked,
+  }))
+
+  // 광역시 구역(living_area_id 1~7)에서만 같은 구역 이웃(구역B/C/D)을 4방향 화살표 풀에서
+  // 제외한다 — 4슬롯 그리디 매칭에 섞이면 기존 외부(타 시/도) 인접 화살표를 뺏어가므로(§8.2는
+  // "4방향 고정"만 규정, 광역시 내부 이동 UI는 별도 취급), 별도 구역 전환 리스트(zones)로 분리.
+  // 그 외 생활권은 이 분기를 타지 않아 기존 assignDirs 동작(전체 이웃 대상)이 그대로 유지된다.
+  const isMetroZone = METRO_LIVING_AREA_IDS.has(currentCity.living_area_id)
+  const externalCandidates = isMetroZone
+    ? neighborsWithLock.filter((c) => c.livingAreaId !== currentCity.living_area_id)
+    : neighborsWithLock
+  const siblingCandidates = isMetroZone
+    ? neighborsWithLock.filter((c) => c.livingAreaId === currentCity.living_area_id)
+    : []
+
+  const neighbors: Neighbor[] = assignDirs(playerCentroid, externalCandidates)
+  const zones: Zone[] = siblingCandidates.map((c) => ({
+    cityId: c.cityId,
+    name: c.name,
+    locked: c.locked,
+  }))
+
+  // 라벨: 화면에 실제 표시되는 플레이어 시 + 화살표로 뜬 인접 시(최대 4개) — 개수 작아 밀도 제어 불필요
+  const assignedNeighborIds = new Set(neighbors.map((n) => n.cityId))
+  const labels: CityLabel[] = [
+    { cityId: currentCityId, name: currentCity.name, ...playerCentroid },
+    ...(neighborCities ?? [])
+      .filter((c) => assignedNeighborIds.has(c.id))
+      .map((c) => ({ cityId: c.id, name: c.name, ...parsePoint(c.centroid) })),
+  ]
 
   // 전설 출현지: 현재 도 진행률 100%일 때만, 그 도의 is_legendary_site 시 노출(§15)
   const [{ data: provProgress }, { data: legendaryCity }, { data: tierLabel }, { count: totalSpecies }] =
@@ -148,7 +182,10 @@ export default async function MapPage() {
       <MapContainer
         playerCentroid={playerCentroid}
         neighbors={neighbors}
+        zones={zones}
         legendarySite={legendarySite}
+        labels={labels}
+        provinceId={currentProvinceId}
       />
     </main>
   )

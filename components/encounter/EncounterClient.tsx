@@ -3,11 +3,13 @@
 // Catch & Encounter 격리 탭 — DESIGN.md §2.2 세로 3단 레이아웃.
 // Result는 별도 라우트가 아닌 같은 탭 안의 오버레이(PRD §8.3~8.4, CLAUDE.md §5).
 import { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { animate, motion, useReducedMotion } from 'framer-motion'
 import { catchAttempt } from '@/lib/game/catchAttempt'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
+import { encounterBackground } from '@/components/encounter/typeColors'
 import { PokemonSprite } from '@/components/pokedex/PokemonSprite'
 
 export type EncounterClientProps = {
@@ -52,6 +54,8 @@ export default function EncounterClient({
   const [pending, setPending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [missed, setMissed] = useState(false)
+  // 이미지 로딩 실패 시 기존 원형/텍스트 placeholder로 폴백
+  const [spriteError, setSpriteError] = useState(false)
   // 신규/재포획 구분용 — 조회 실패 시 null(기본 성공 문구, 치명 아님)
   const [catchCount, setCatchCount] = useState<number | null>(null)
   // 서버 시각과의 하이드레이션 불일치 방지: 마운트 후에만 카운트다운 표시
@@ -61,6 +65,7 @@ export default function EncounterClient({
   const reduced = useReducedMotion()
   const mainRef = useRef<HTMLElement>(null)
   const spriteRef = useRef<HTMLDivElement>(null)
+  const ringRef = useRef<HTMLDivElement>(null)
   const grassRef = useRef<HTMLDivElement>(null)
   const shutterRef = useRef<HTMLDivElement>(null)
   const darkenRef = useRef<HTMLDivElement>(null)
@@ -124,16 +129,41 @@ export default function EncounterClient({
     }
   }, [reduced, isLegendary])
 
-  // 빗나감 흔들림 — 서버가 miss를 확정(setMissed)한 뒤에만 재생
+  // 시도 중 중립 반복 펄스 — 결과를 암시하지 않는 단순 스케일 반복, 서버 응답 도착(pending false) 즉시 정지
   useEffect(() => {
-    if (!missed || reduced || !spriteRef.current) return
+    if (!pending || reduced || !spriteRef.current) return
     const c = animate(
       spriteRef.current,
-      { x: [0, -10, 10, -7, 7, 0] },
+      { scale: [1, 1.05, 1] },
+      { duration: 0.5, repeat: Infinity, ease: 'easeInOut' },
+    )
+    return () => {
+      c.stop()
+      // repeat 도중 정지 시 중간 scale이 남는다 — 다음 상태(성공/실패 펄스) 시작 전에 리셋
+      // 수동 style 리셋은 framer 내부 트래킹과 어긋나 다음 애니메이션 시작 시 튐을 유발하므로 animate()로 동기화
+      if (spriteRef.current) animate(spriteRef.current, { scale: 1 }, { duration: 0 })
+    }
+  }, [pending, reduced])
+
+  // 빗나감 흔들림+페이드 — 서버가 miss를 확정(setMissed)한 뒤에만 재생, 재시도 가능하므로 opacity는 복귀
+  // 전설은 배경이 이미 어두워진 상태라 진폭을 줄여 입장 연출(지진)과 강도를 분리
+  useEffect(() => {
+    if (!missed || reduced || !spriteRef.current) return
+    const shakeX = isLegendary ? [0, -6, 6, -4, 4, 0] : [0, -10, 10, -7, 7, 0]
+    const c = animate(
+      spriteRef.current,
+      { x: shakeX, opacity: [1, 0.3, 1] },
       { duration: 0.45 },
     )
     return () => c.stop()
-  }, [missed, reduced])
+  }, [missed, reduced, isLegendary])
+
+  // 도망(최종 실패) 페이드아웃 — 도망 확정 후 Result 오버레이가 곧 덮으므로 복귀 없이 유지
+  useEffect(() => {
+    if (phase !== 'fled' || reduced || !spriteRef.current) return
+    const c = animate(spriteRef.current, { opacity: [1, 0] }, { duration: 0.5, ease: 'easeIn' })
+    return () => c.stop()
+  }, [phase, reduced])
 
   // 포획 성공 펄스 — 서버가 caught를 확정한 뒤에만 재생
   useEffect(() => {
@@ -145,6 +175,17 @@ export default function EncounterClient({
     )
     return () => c.stop()
   }, [phase, reduced])
+
+  // 포획 성공 반짝임(ring 확장) — 스케일 펄스에 얹는 신규 이펙트, 전설은 배경이 이미 진해 확장폭을 줄여 분리
+  useEffect(() => {
+    if (phase !== 'caught' || reduced || !ringRef.current) return
+    const c = animate(
+      ringRef.current,
+      { scale: [1, isLegendary ? 1.5 : 1.8], opacity: [0.8, 0] },
+      { duration: 0.6, ease: 'easeOut' },
+    )
+    return () => c.stop()
+  }, [phase, reduced, isLegendary])
 
   // phase가 'active'를 벗어나면(포획/도망 확정) 더 셀 시간이 없다 — 결과가 난 뒤에도
   // 계속 재렌더되며 goMap이 매초 새로 생성돼 Result 모달 포커스를 방해하는 것도 함께 방지.
@@ -202,6 +243,28 @@ export default function EncounterClient({
 
   const goMap = () => setLeaving(true)
 
+  // 실루엣 해제 = 포획 확정 시점과 동일 기준 — 도망(fled)은 끝까지 비공개(PRD §8.5)
+  const revealed = phase === 'caught'
+
+  // 스페이스=포획 시도, 엔터=결과 확인/나가기. 이 화면엔 텍스트 입력 필드가 없지만 방어적으로 가드.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (phase === 'active' && !pending && attemptsLeft > 0) handleThrow()
+      } else if (e.code === 'Enter') {
+        if (phase !== 'active') goMap()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // handleThrow/goMap 재생성은 phase/pending/attemptsLeft 변화와 항상 동기화되므로 안전 —
+    // deps에 넣으면 매 렌더 리스너를 재등록해 불필요한 churn만 늘어난다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, pending, attemptsLeft])
+
   return (
     <motion.main
       ref={mainRef}
@@ -218,10 +281,10 @@ export default function EncounterClient({
       <div
         aria-hidden
         className={`absolute inset-0 -z-10 ${
-          isLegendary
-            ? 'bg-gradient-to-b from-[#3a4a57] to-[#181f26]' // 전설: 하늘색 톤을 어둡게
-            : 'bg-gradient-to-b from-[#cce8f4] to-[#F0F0F0]' // TODO: 하단을 시(City) 대표 색상으로 동적 매칭(DESIGN.md §2.2)
+          isLegendary ? 'bg-gradient-to-b from-[#3a4a57] to-[#181f26]' : '' // 전설: 하늘색 톤을 어둡게
         }`}
+        // 일반 조우는 야생 포켓몬 타입(type1/type2) 배색 — 정적 이미지 없이 CSS 그라디언트로만 표현
+        style={isLegendary ? undefined : { backgroundImage: encounterBackground(type1, type2) }}
       />
       {isLegendary ? (
         <>
@@ -313,12 +376,29 @@ export default function EncounterClient({
           ref={spriteRef}
           className="relative h-48 w-48 rounded-full border-2 border-black bg-black/20"
         >
-          <PokemonSprite dexNo={dexNo} alt={nameKr} fallbackClass="bg-zinc-400" />
+          <PokemonSprite
+            dexNo={dexNo}
+            alt={revealed ? nameKr : '???'}
+            silhouette={!revealed}
+            fallbackClass="bg-zinc-400"
+          />
+          {/* 포획 성공 반짝임 ring — 평상시 opacity 0, caught 확정 시에만 imperative animate로 노출 */}
+          <div
+            aria-hidden
+            ref={ringRef}
+            className="pointer-events-none absolute inset-0 rounded-full border-4 border-yellow-300 opacity-0"
+          />
         </div>
         {/* STROKE 흰 테두리 — 전설 어두운 배경(darken 0.45)에서도 대비 확보(WCAG 1.4.3) */}
         <span className={`text-xs text-black/70 ${STROKE}`}>
-          {type1}
-          {type2 ? ` / ${type2}` : ''}
+          {revealed ? (
+            <>
+              {type1}
+              {type2 ? ` / ${type2}` : ''}
+            </>
+          ) : (
+            '???'
+          )}
         </span>
         {missed && phase === 'active' && (
           <p role="status" className={`text-sm font-bold text-black ${STROKE}`}>
@@ -341,9 +421,9 @@ export default function EncounterClient({
         }}
       >
         <span className="border-r-2 border-black px-4 font-mono font-bold">
-          No.{String(dexNo).padStart(4, '0')}
+          {revealed ? `No.${String(dexNo).padStart(4, '0')}` : '???'}
         </span>
-        <span className="px-4 text-lg font-extrabold">{nameKr}</span>
+        <span className="px-4 text-lg font-extrabold">{revealed ? nameKr : '???'}</span>
       </div>
 
       {/* 하단: 타이머 + 남은 시도 + 포획하기 화살표 리본 버튼 */}
@@ -386,7 +466,7 @@ export default function EncounterClient({
               {/* TODO: 도 100% 달성 배너(PRD §8.4) — 판정 데이터가 응답에 없어 이번 슬라이스 스킵 */}
             </>
           ) : (
-            <p className="text-lg font-extrabold">{nameKr}은(는) 도망쳤다...</p>
+            <p className="text-lg font-extrabold">{revealed ? nameKr : '???'}은(는) 도망쳤다...</p>
           )}
           <button
             type="button"

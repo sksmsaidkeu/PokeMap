@@ -10,6 +10,7 @@ Supabase(PostgreSQL 15+) 기준. 스키마는 `public`. 원본 자료: `PokeMap_
 | 도 (서울/경기/…) | `provinces` | 17개, 이동 제한 없는 지역 구분 단위(섬 지역만 예외) |
 | 생활권 | `living_areas` | 도 내부 세부 권역, 스폰 풀의 단위 |
 | 시/군/구 | `cities` | 이동 최소 단위 |
+| 광역시/특별시 내부 구역 | `cities`(구 이름 4묶음, 동일 `living_area_id` 공유) | 이동만 세분화, 스폰 풀은 시 단위 그대로(§4.5) |
 | 등급(몬스터볼~마스터볼) | `v_user_tier` (뷰) | 유저 전체 포획률 기반, 별도 테이블 없음 |
 | 전설 포켓몬 | `provinces.legendary_dex_no` + `cities.is_legendary_site` | 도당 1마리, 고정 시에 배치 |
 
@@ -104,6 +105,10 @@ Constraint: `UNIQUE(province_id, name)`
 | `is_legendary_site` | boolean | NOT NULL DEFAULT false, 도당 정확히 1개 시만 true(도의 "상징적인 시") |
 
 Index: `idx_cities_living_area ON cities(living_area_id)`. Constraint(앱 레벨 검증): 도(`living_area.province_id` 경유)당 `is_legendary_site=true` 행은 정확히 1개.
+
+**광역시/특별시 구역 분할**(서울/부산/대구/인천/광주/대전/울산 7곳, 세종은 구가 1개뿐이라 제외): 기존 시 전체를 나타내던 단일 `cities` 행 하나를 그대로 "구역A"로 유지(id·`is_legendary_site`·외부 `city_connections` 승계)하고, 구역B/C/D를 구 이름 4묶음(`files/korea_map_data.json`의 `counties[]`를 실제 경계 데이터 없이 그룹핑, `korea_map_data.json` 수동 편집 금지 원칙과 무관 — 폴리곤은 그대로, `cities.name`만 추가) 기준으로 신규 삽입한다. 4개 모두 동일 `living_area_id`를 공유하므로 `region_spawn_pool` 조회(§10.1)는 변경 없음. 구역 간 이동은 `city_connections`에 4개 구역 전원 완전 그래프(6쌍)로 추가하고, 외부(타 시/도)로의 연결은 구역A만 유지한다 — 즉 광역시 진입/이탈은 구역A를 경유해야 한다.
+
+온보딩 수동 선택(`LoginForm.tsx`)의 시/군/구 드롭다운은 이 7개 광역시 도 선택 시 구역A(`is_legendary_site=true`)만 노출한다 — 신규 유저는 분할 이전과 동일한 굵기로 시작하고, 구역B/C/D는 입장 후 지도 이동으로만 도달한다.
 
 ### 4.6 `city_connections`
 시군 인접 그래프(상/하/좌/우 이동 UI의 실제 데이터). `files/korea_map_data.json` 폴리곤 경계 공유 여부로 배치 산출 후 시드.
@@ -251,13 +256,31 @@ CREATE FUNCTION calc_catch_rate(bst smallint) RETURNS numeric AS $$
 $$ LANGUAGE sql IMMUTABLE;
 ```
 
-### 6.3 `calc_legendary_catch_rate(fail_visits smallint) RETURNS numeric`
+### 6.3 `calc_legendary_catch_rate(fail_visits smallint, p_user_id uuid, p_province_id smallint) RETURNS numeric`
 ```sql
 -- 전설 포켓몬: 기본 3%, 실패 방문마다 영구 +1%p 누적 (PokeMap_MainSystem.md §5 원본 그대로)
-CREATE FUNCTION calc_legendary_catch_rate(fail_visits smallint) RETURNS numeric AS $$
-  SELECT LEAST(1.0, 0.03 + fail_visits * 0.01);
-$$ LANGUAGE sql IMMUTABLE;
+-- + 도내 금프레임 보정(§6.3.1): 해당 도 스폰 풀 소속 포켓몬 중 catch_count>=50 달성
+-- 마리 수 × 0.5%p, 상한 +10%p. pity 누적과 가산한 뒤 단 한 번만 최종 clamp.
+CREATE FUNCTION calc_legendary_catch_rate(fail_visits smallint, p_user_id uuid, p_province_id smallint)
+RETURNS numeric AS $$
+  SELECT LEAST(1.0, GREATEST(0,
+    0.03 + fail_visits * 0.01
+    + LEAST(0.10, (
+        SELECT COUNT(DISTINCT rsp.dex_no)
+        FROM region_spawn_pool rsp
+        JOIN living_areas la ON la.id = rsp.living_area_id
+        JOIN user_pokedex up ON up.user_id = p_user_id AND up.dex_no = rsp.dex_no
+        WHERE la.province_id = p_province_id AND up.catch_count >= 50
+      ) * 0.005)
+  ));
+$$ LANGUAGE sql STABLE;
 ```
+
+#### 6.3.1 도내 금프레임 포획확률 보정 (신규, `20260728000000_legendary_province_catch_boost.sql`)
+
+기존 pity 공식(기본 3% + 실패 1회당 영구 +1%p)과는 **별개의 가산 항목**이다. 그 도(province)의 `region_spawn_pool`에 배정된 dex_no 중 유저의 `user_pokedex.catch_count >= 50`(금프레임)을 만족하는 마리 수를 세어 마리당 +0.5%p, 상한 +10%p를 가산한다. pity 누적치와 이 보정치는 각각 clamp하지 않고 먼저 합산한 뒤 `calc_legendary_catch_rate` 안에서 `LEAST(1.0, GREATEST(0, ...))`로 딱 한 번만 최종 clamp한다(이중 clamp 시 상한 초과분이 사라져 pity 누적이 무의미해지는 것을 방지).
+
+이 보정을 포함한 확률 계산은 전부 서버(DB 함수, `calc_legendary_catch_rate`) 안에서만 일어난다 — §22 절대금지사항(클라이언트 확률 계산/결과 확정 금지)은 이 신규 보정에도 동일하게 적용되며, `fn_move_city`/`fn_catch_attempt`/`calc_session_catch_tier` 세 호출부 모두 이 함수를 거쳐서만 확률을 얻고, 클라이언트/Edge Function으로는 여전히 `catch_rate_tier` 문자열만 내려간다(원시 %는 노출하지 않음).
 
 ### 6.4 `check_endgame_unlock(p_user_id uuid) RETURNS boolean`
 `is_island_endgame=false`인 모든 도가 100% 포획 완료(`v_user_province_progress`)이면 true — 제주도 해금 조건(`PokeMap_MainSystem.md` §2). 육지 도는 해금 조건 자체가 없어(§14) 이 함수의 대상이 아니다.
@@ -284,8 +307,8 @@ $$ LANGUAGE sql STABLE;
 ## 7. View
 
 - `v_city_neighbors` — `city_connections` 양방향 전개.
-- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용. endgame 생활권(`living_areas.is_endgame_area=true`, 울릉권/옹진군)은 집계에서 제외한다(마이그레이션 `20260722000000`) — 포함하면 소속 도(경상북도/인천광역시)의 100%가 미해금 지역 포획을 요구해 해금이 영구히 불가능한 순환 의존이 생긴다.
-- `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환).
+- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용. endgame 생활권(`living_areas.is_endgame_area=true`, 울릉권/옹진군)은 집계에서 제외한다(마이그레이션 `20260722000000`) — 포함하면 소속 도(경상북도/인천광역시)의 100%가 미해금 지역 포획을 요구해 해금이 영구히 불가능한 순환 의존이 생긴다. **`security_invoker = true`(마이그레이션 `20260726000000`, §18 참고)** — 이 뷰는 `profiles`를 CROSS JOIN하는 최상위 테이블로 삼으므로, `security_invoker=true`만으로 `profiles.select_own` RLS가 조회자 컨텍스트에 재적용되어 자기 자신의 도별 진행률만 남는다(`v_region_pokedex_status`처럼 조인 조건에 `auth.uid()`를 명시하지 않아도 됨 — 그렇게 하면 `check_endgame_unlock` 자체는 `SECURITY INVOKER`(기본값)지만 이를 호출하는 `fn_move_city`가 `SECURITY DEFINER`라 그 내부에서는 role이 소유자 `postgres`로 승격되어 실행되고, 그 컨텍스트에서 `auth.uid()`가 `NULL`이 되어 항상 0행이 되고 해금 판정이 깨진다).
+- `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환). **`security_invoker = true`(마이그레이션 `20260726000000`)** — 위와 동일한 이유.
 
 ## 8. RLS & Policy
 
@@ -305,8 +328,9 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 | 함수 | 트리거 | 역할 |
 |---|---|---|
 | `bootstrap-location` | 회원가입 직후(닉네임+GPS 좌표 또는 수동 선택 시 전달) | 닉네임 검증 → 시작 시 확정(수동 선택 > GPS 최근접 > 서울 폴백) → `profiles`+`user_progress` 생성 |
+| `rename-trainer` | AppHeader 닉네임 변경 모달에서 저장 | 닉네임 길이 검증(2~20자) → 요청자 `user_id`와 `profiles.id` 일치 확인 후 본인 row만 UPDATE → UNIQUE 위반 시 `NICKNAME_TAKEN` |
 | `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 최종 히든 지역 — `is_island_endgame=true` 도 또는 `is_endgame_area=true` 생활권 — 은 `check_endgame_unlock` 미충족 시 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `check_endgame_unlock` 평가(§10 6단계) |
-| `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
+| `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits, user_id, province_id)`(§6.3.1 금프레임 보정 포함) 판정 → `catch_attempts` 삽입 |
 | `unlock-check` | 폐기(독립 EF 없음) | `fn_move_city` 6단계 + `fn_catch_attempt` 포획 성공 경로에서 `check_endgame_unlock` 평가로 대체 — 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
 | `session-sweep` | Cron(5분) | 만료된 `encounter_sessions`를 `fled` 처리, 만료된 `legendary_cooldowns` 정리 |
 
@@ -386,7 +410,7 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 
 - 도감 100% 완공 시 지도에 해당 도의 전설 출현지(`is_legendary_site` 시)가 노출.
 - 그 시로 이동하면 스폰 확률 판정 없이 곧바로 전설 조우 세션 생성(`legendary_cooldowns`가 만료된 경우에만).
-- 포획 확률 = `calc_legendary_catch_rate(legendary_pity.fail_visits)`, 3회 시도 내 미포획 시 `legendary_pity.fail_visits += 1`, `legendary_cooldowns.next_available_at = now() + 1h`.
+- 포획 확률 = `calc_legendary_catch_rate(legendary_pity.fail_visits, user_id, province_id)`(도내 금프레임 보정 포함, §6.3.1), 3회 시도 내 미포획 시 `legendary_pity.fail_visits += 1`, `legendary_cooldowns.next_available_at = now() + 1h`.
 - 포획 성공 시 더 이상 해당 도의 전설 관련 카운터를 갱신할 필요 없음(재도전 없음).
 
 ## 16. 최종 히든 지역 (제주도 / 울릉도·독도·옹진군)
@@ -404,3 +428,14 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 - `legendary_cooldowns.next_available_at`에만 존재하는 컬럼 — 전설 포획 3회 실패 후 재도전까지의 1시간 잠금을 표현한다(`PokeMap_MainSystem.md` §5).
 - 일반 포켓몬 인카운터에는 이동 쿨다운이 없다 — 이동할 때마다 매번 새로 스폰 판정을 시도한다(원본 문서에 일반 이동 쿨다운 규정 없음).
 - 만료 여부는 조회 시점에 `now()`와 비교, `session-sweep`은 저장공간 정리용일 뿐 로직에 필수는 아니다.
+
+## 18. 지역 클릭 시 포획/미포획 목록 (`v_region_pokedex_status`)
+
+지도에서 시/군을 클릭했을 때 그 지역 스폰 풀의 포획/미포획 목록을 보여주기 위한 읽기 전용 인터페이스(마이그레이션 `20260725000002`). 목록 UI 자체는 도감 팀 소유(§3) — 여기서는 데이터 인터페이스만 정의한다.
+
+- **형태**: `region_spawn_pool`(전체공개 `select_all`)과 `user_pokedex`(`select_own`)를 조인하는 뷰. RPC 함수가 아니라 뷰인 이유(YAGNI): 파라미터가 `city_id` 단일 등치 필터뿐이라 PostgREST의 `.eq('city_id', ...)`로 충분 — plpgsql 함수를 새로 만들 이유가 없다.
+- **파라미터**: 없음(뷰 컬럼). 조회 시 `city_id`로 등치 필터링해 사용(맵의 `onLabelClick(cityId)`가 그대로 키가 됨 — `living_area_id`로 한 단계 더 조회하는 왕복 없이 1쿼리로 끝남, §21 N+1 금지).
+- **반환 컬럼**: `city_id`(필터 키), `living_area_id`, `dex_no`, `category`(`공통`/`고유`), `is_legendary`, `caught boolean`(해당 유저의 `user_pokedex` 존재 여부), `catch_count`(미포획 시 0).
+- **RLS 방식 — SECURITY INVOKER 필수, DEFINER 절대 금지**: PostgreSQL 15+에서 뷰는 기본적으로 **소유자(postgres) 권한**으로 실행된다 — `WITH (security_invoker = true)`를 명시하지 않으면 조회자가 누구든 뷰 내부의 `user_pokedex` 접근이 소유자 권한으로 이뤄져 `select_own` RLS가 무시되고(=SECURITY DEFINER와 동일한 효과) **타 유저의 포획 기록이 그대로 노출**된다. 반드시 `security_invoker = true`로 생성해 조회자의 `auth.uid()` 컨텍스트에서 `user_pokedex` RLS가 재적용되게 한다. `LEFT JOIN user_pokedex up ON up.dex_no = rsp.dex_no AND up.user_id = auth.uid()`로 조인 조건에도 명시적으로 `auth.uid()`를 걸어 RLS가 우연히도 어긋나는 상황에 이중 방어한다.
+- ~~기존 `v_user_province_progress`/`v_user_tier`(§7)는 `security_invoker` 없이 생성되어 있어 이 규칙을 따르지 않는다~~ **(수정 완료, 마이그레이션 `20260726000000`)**. 소급 수정을 스코프 밖으로 미룬 근거("호출부가 항상 `p_user_id`로 필터링하는 `SECURITY DEFINER` 함수 내부에서만 쓰여 현재는 직접 노출 경로가 없음")는 게이트 리뷰에서 틀렸음이 확인됨 — `app/map/page.tsx`가 `v_user_province_progress`를 `.from()`으로 직접 SELECT하고(익명 키 + 유저 세션, `service_role`이 아님), `lib/game/pokedex-data.ts`는 `user_id` 필터조차 없이 전체 SELECT한다. `security_invoker` 없는 뷰는 소유자(`postgres`, RLS 우회) 권한으로 실행되므로 이 두 경로 모두 PostgREST를 통해 타 유저의 도별 진행률이 그대로 노출될 수 있었다(anon/authenticated에 `GRANT ALL`까지 걸려 있어 REST API로 직접 호출도 가능). `security_invoker=true` 적용 후에는 `SECURITY DEFINER` 함수(`postgres` 소유, RLS 우회 유지) 경로는 동작 불변, 클라이언트 직접 SELECT 경로는 `profiles.select_own` RLS로 자동 제한된다.
+- 클라이언트 wrapper: `lib/game/regionSpawnStatus.ts`의 `getRegionSpawnStatus(cityId)` — `anon` key로 뷰를 직접 SELECT(Edge Function 아님, 확률/쓰기 없는 순수 조회라 EF 불필요).

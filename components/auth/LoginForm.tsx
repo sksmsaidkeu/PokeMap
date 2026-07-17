@@ -17,6 +17,9 @@ type City = { id: number; name: string }
 
 type BootstrapOutcome = 'ok' | 'nickname_taken' | 'invalid_nickname' | 'invalid_city' | 'error'
 
+// 서울/부산/대구/인천/광주/대전/울산 — 구역 분할된 광역시(provinces.id, DB.md §4.5)
+const METRO_PROVINCE_IDS = [1, 2, 3, 4, 5, 6, 7]
+
 // 브라우저 Geolocation만 사용(CLAUDE.md §6). 거부/타임아웃/미지원 시 null → 수동 선택으로 유도.
 function getCoords(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
@@ -111,11 +114,13 @@ export default function LoginForm() {
     }
     const areaIds = (areas ?? []).map((a) => a.id)
     if (areaIds.length === 0) return
-    const { data: cityRows, error: cityErr } = await supabase
-      .from('cities')
-      .select('id, name')
-      .in('living_area_id', areaIds)
-      .order('name')
+    let cityQuery = supabase.from('cities').select('id, name').in('living_area_id', areaIds).order('name')
+    // 광역시 구역 분할(DB.md §4.5) 후에도 온보딩은 기존과 같은 굵기로 유지 —
+    // 구역B/C/D는 지도 진입 후 이동으로만 도달, 시작지 선택지는 구역A(is_legendary_site)만 노출.
+    if (METRO_PROVINCE_IDS.includes(next)) {
+      cityQuery = cityQuery.eq('is_legendary_site', true)
+    }
+    const { data: cityRows, error: cityErr } = await cityQuery
     if (cityErr) {
       setFormError('지역 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')
       return
