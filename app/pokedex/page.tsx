@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PokedexBrowser } from "@/components/pokedex/PokedexBrowser";
 import { getPokedexProvinceGroups } from "@/lib/game/pokedex-data";
@@ -22,28 +20,19 @@ export default async function PokedexPage({
   } = await supabase.auth.getUser();
   if (!user && !isPreview) redirect("/login");
 
-  const base = await getPokedexProvinceGroups();
-  const groups = isPreview ? applyPreview(base, level) : base;
-
-  let header: ReactNode = null;
-  if (user) {
-    const [{ data: profile }, { data: tierLabel }] = await Promise.all([
-      supabase.from("profiles").select("nickname").eq("id", user.id).maybeSingle(),
-      supabase.rpc("calc_user_tier", { p_user_id: user.id }),
-    ]);
-    header = (
-      <AppHeader
-        trainerName={profile?.nickname ?? user.email?.split("@")[0] ?? "트레이너"}
-        tier={tierFromLabel(tierLabel)}
-      />
-    );
-  }
+  const supabase = await createClient();
+  const [base, { count: caughtCount }] = await Promise.all([
+    getPokedexProvinceGroups(),
+    // select_own RLS로 로그인 유저 행만 잡히므로 별도 user_id 필터 불필요
+    supabase.from("user_pokedex").select("dex_no", { count: "exact", head: true }),
+  ]);
+  const groups = isPreviewLevel(level) ? applyPreview(base, level) : base;
 
   return (
     <main className={`mx-auto max-w-4xl px-4 pb-8 ${user ? "pt-20" : "pt-8"}`}>
       {header}
       <h1 className="mb-6 text-xl font-bold">도감</h1>
-      <PokedexBrowser groups={groups} />
+      <PokedexBrowser groups={groups} caughtCount={caughtCount ?? 0} />
     </main>
   );
 }
