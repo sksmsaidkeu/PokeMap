@@ -382,6 +382,8 @@ export type Database = {
         Row: {
           bst: number
           dex_no: number
+          evo_chain_id: number | null
+          evo_stage: number | null
           flavor_text: string | null
           height_dm: number | null
           name_en: string
@@ -394,6 +396,8 @@ export type Database = {
         Insert: {
           bst: number
           dex_no: number
+          evo_chain_id?: number | null
+          evo_stage?: number | null
           flavor_text?: string | null
           height_dm?: number | null
           name_en: string
@@ -406,6 +410,8 @@ export type Database = {
         Update: {
           bst?: number
           dex_no?: number
+          evo_chain_id?: number | null
+          evo_stage?: number | null
           flavor_text?: string | null
           height_dm?: number | null
           name_en?: string

@@ -31,7 +31,9 @@ export async function getPokedexProvinceGroups(): Promise<PokedexProvinceGroup[]
       supabase.from("region_spawn_pool").select("dex_no,is_legendary,living_area_id"),
       supabase
         .from("pokemon_species")
-        .select("dex_no,name_kr,type1,type2,bst,flavor_text,height_dm,weight_hg,primary_ability"),
+        .select(
+          "dex_no,name_kr,type1,type2,bst,flavor_text,height_dm,weight_hg,primary_ability,evo_chain_id,evo_stage",
+        ),
       supabase.from("user_pokedex").select("dex_no,first_caught_at,catch_count"),
       supabase.from("v_user_province_progress").select("province_id,caught_count,total_count,pct"),
     ]);
