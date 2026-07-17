@@ -8,6 +8,7 @@ import { animate, motion, useReducedMotion } from 'framer-motion'
 import { catchAttempt } from '@/lib/game/catchAttempt'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
+import { PokemonSprite } from '@/components/pokedex/PokemonSprite'
 
 export type EncounterClientProps = {
   sessionId: string
@@ -306,22 +307,19 @@ export default function EncounterClient({
         </span>
       </div>
 
-      {/* 중앙: 포켓몬 이미지 영역 — TODO: 스프라이트 에셋 확보 시 next/image로 교체 */}
+      {/* 중앙: 포켓몬 이미지 영역 — 도감과 동일한 PokemonSprite(dex_no 기반 정적 에셋) 재사용 */}
       <div className="flex flex-1 flex-col items-center justify-center gap-2">
         <div
           ref={spriteRef}
-          className="flex h-48 w-48 flex-col items-center justify-center gap-1 rounded-full border-2 border-black bg-black/20"
+          className="relative h-48 w-48 rounded-full border-2 border-black bg-black/20"
         >
-          <span className={`text-3xl font-extrabold text-black ${STROKE}`}>
-            No.{String(dexNo).padStart(4, '0')}
-          </span>
-          <span className={`text-xl font-bold text-black ${STROKE}`}>{nameKr}</span>
-          {/* STROKE 흰 테두리 — 전설 어두운 배경(darken 0.45)에서도 대비 확보(WCAG 1.4.3) */}
-          <span className={`text-xs text-black/70 ${STROKE}`}>
-            {type1}
-            {type2 ? ` / ${type2}` : ''}
-          </span>
+          <PokemonSprite dexNo={dexNo} alt={nameKr} fallbackClass="bg-zinc-400" />
         </div>
+        {/* STROKE 흰 테두리 — 전설 어두운 배경(darken 0.45)에서도 대비 확보(WCAG 1.4.3) */}
+        <span className={`text-xs text-black/70 ${STROKE}`}>
+          {type1}
+          {type2 ? ` / ${type2}` : ''}
+        </span>
         {missed && phase === 'active' && (
           <p role="status" className={`text-sm font-bold text-black ${STROKE}`}>
             빗나갔다! 다시 시도할 수 있다.
