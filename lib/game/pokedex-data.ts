@@ -77,9 +77,11 @@ export async function getPokedexProvinceGroups(): Promise<PokedexProvinceGroup[]
       if (!isLegendary) normalTotal += 1;
     }
     // 전설은 진행률 분모에서 제외(v_user_province_progress와 동일 규칙), 카드는 전설을 뒤로.
+    // 그 외에는 한글명 가나다 순(localeCompare 'ko') — 도감 열람 편의(같은 이름 없음 → dex_no 타이브레이커 불필요).
     cards.sort(
       (a, b) =>
-        Number(a.isLegendary) - Number(b.isLegendary) || a.species.dex_no - b.species.dex_no,
+        Number(a.isLegendary) - Number(b.isLegendary) ||
+        a.species.name_kr.localeCompare(b.species.name_kr, "ko"),
     );
 
     // 로그인 유저가 없으면 뷰에 행이 없으므로 total만 로컬 계산하고 caught/pct는 0.

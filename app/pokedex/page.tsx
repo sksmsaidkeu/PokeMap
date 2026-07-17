@@ -1,10 +1,11 @@
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PokedexBrowser } from "@/components/pokedex/PokedexBrowser";
 import { getPokedexProvinceGroups } from "@/lib/game/pokedex-data";
 import { applyPreview, isPreviewLevel } from "./preview-fixtures";
 import { AppHeader } from "@/components/ui/AppHeader";
-import { tierFromLabel } from "@/lib/game/tier";
+import { tierFromLabel } from "@/components/ui/tier";
 
 // ?preview=full|half|newbie 는 로그인 없이도 QA용 완성도 더미를 볼 수 있게 auth 가드를 우회한다(PRD §5는 실데이터 접근만 대상)
 export default async function PokedexPage({
@@ -22,26 +23,28 @@ export default async function PokedexPage({
   } = await supabase.auth.getUser();
   if (!user && !isPreview) redirect("/login");
 
-  const [base, { count: caughtCount }] = await Promise.all([
-    getPokedexProvinceGroups(),
-    // select_own RLS로 로그인 유저 행만 잡히므로 별도 user_id 필터 불필요
-    supabase.from("user_pokedex").select("dex_no", { count: "exact", head: true }),
-  ]);
+  const [base, { count: caughtCount }, { count: totalSpecies }, profileRes, tierRes] =
+    await Promise.all([
+      getPokedexProvinceGroups(),
+      // select_own RLS로 로그인 유저 행만 잡히므로 별도 user_id 필터 불필요
+      supabase.from("user_pokedex").select("dex_no", { count: "exact", head: true }),
+      supabase.from("pokemon_species").select("dex_no", { count: "exact", head: true }),
+      user
+        ? supabase.from("profiles").select("nickname").eq("id", user.id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      user ? supabase.rpc("calc_user_tier", { p_user_id: user.id }) : Promise.resolve({ data: null }),
+    ]);
   const groups = isPreview ? applyPreview(base, level) : base;
 
-  // 헤더는 실제 로그인 유저에게만 노출(미리보기 전용 방문자는 트레이너 정보가 없음)
-  let trainerName = "";
-  let tier = tierFromLabel(null);
-  let totalSpecies = 0;
+  let header: ReactNode = null;
   if (user) {
-    const [{ data: profile }, { data: tierLabel }, { count }] = await Promise.all([
-      supabase.from("profiles").select("nickname").eq("id", user.id).maybeSingle(),
-      supabase.rpc("calc_user_tier", { p_user_id: user.id }),
-      supabase.from("pokemon_species").select("dex_no", { count: "exact", head: true }),
-    ]);
-    trainerName = profile?.nickname ?? user.email?.split("@")[0] ?? "트레이너";
-    tier = tierFromLabel(tierLabel);
-    totalSpecies = count ?? 0;
+    header = (
+      <AppHeader
+        trainerName={profileRes.data?.nickname ?? user.email?.split("@")[0] ?? "트레이너"}
+        tier={tierFromLabel(tierRes.data)}
+        totalSpecies={totalSpecies ?? 0}
+      />
+    );
   }
 
   return (

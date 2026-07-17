@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
 import { AppHeader } from '@/components/ui/AppHeader'
-import { tierFromLabel } from '@/lib/game/tier'
+import { tierFromLabel } from '@/components/ui/tier'
 
 // PostgREST는 point를 "(lon,lat)" 문자열로 반환 → {lon,lat} 파싱
 // 실패 시 (0,0) 폴백이 바다를 조용히 렌더하는 것보다 즉시 실패가 낫다
@@ -142,7 +142,6 @@ export default async function MapPage() {
     <main className="flex h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
-        // rpc 실패 시 최저 등급 폴백 — 헤더가 페이지를 막을 이유는 없다
         tier={tierFromLabel(tierLabel)}
         totalSpecies={totalSpecies ?? 0}
       />
