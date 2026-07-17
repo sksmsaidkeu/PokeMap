@@ -264,11 +264,7 @@ $$ LANGUAGE sql IMMUTABLE;
 
 이 결과는 `provinces.is_island_endgame=true`인 도뿐 아니라 `living_areas.is_endgame_area=true`인 생활권(울릉권/옹진군, §16)의 이동 가능 여부에도 동일하게 사용된다 — 게이트 조건 자체는 하나(`check_endgame_unlock`)이고, 무엇을 잠그느냐(도 전체 vs 생활권 하나)만 다르다.
 
-### 6.5 `bootstrap_user(p_user_id uuid, p_nickname text, p_lat double precision, p_lng double precision) RETURNS TABLE(city_id int, city_name text, fallback boolean)`
-
-GPS 온보딩용. `SECURITY DEFINER`(owner=postgres)로 RLS를 우회해 `profiles`와 `user_progress`를 한 트랜잭션으로 생성한다(`bootstrap-location` Edge Function 전용, service_role만 EXECUTE — anon/authenticated 권한은 회수). 시작 도시는 좌표가 유효하면 육지 도의 최근접 `centroid`(`point(lng, lat)` 순서), 아니면 서울(id=1). `profiles`는 같은 `user_id` 재시도면 멱등(기존 유지), 다른 유저가 닉네임을 선점했으면 `NICKNAME_TAKEN` 예외. `fallback`은 서울 기본값으로 폴백했는지 여부.
-
-### 6.6 `calc_user_tier(p_user_id uuid) RETURNS text`
+### 6.5 `calc_user_tier(p_user_id uuid) RETURNS text`
 전체 포켓몬(도 구분 없이) 대비 유저 포획률로 등급 산출. 임계값은 가정치이며 밸런스 조정 시 `PRD.md` §14 갱신 필요.
 ```sql
 CREATE FUNCTION calc_user_tier(p_user_id uuid) RETURNS text AS $$

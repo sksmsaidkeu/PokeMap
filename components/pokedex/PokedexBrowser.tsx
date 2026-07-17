@@ -8,9 +8,10 @@ import { PokemonDetailModal } from "./PokemonDetailModal";
 
 type PokedexBrowserProps = {
   groups: PokedexProvinceGroup[];
+  caughtCount: number;
 };
 
-export function PokedexBrowser({ groups }: PokedexBrowserProps) {
+export function PokedexBrowser({ groups, caughtCount }: PokedexBrowserProps) {
   const [selected, setSelected] = useState<PokedexCard | null>(null);
   const [query, setQuery] = useState("");
 
@@ -48,7 +49,7 @@ export function PokedexBrowser({ groups }: PokedexBrowserProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="포켓몬 이름 검색"
-            className="h-11 min-w-0 flex-1 rounded-lg border-2 border-black px-3 text-base outline-none focus:ring-2 focus:ring-[#e3350d]"
+            className="h-11 w-40 min-w-0 rounded-lg border-2 border-black px-3 text-base outline-none focus:ring-2 focus:ring-[#e3350d] sm:w-56"
           />
           <button
             type="submit"
@@ -57,6 +58,15 @@ export function PokedexBrowser({ groups }: PokedexBrowserProps) {
           >
             🔍
           </button>
+          {/* 4차 검증 반영: 검색 버튼 오른쪽, 도감 칸 우측 상단 끝에 포획 수만 표시(트레이너 정보 없이) */}
+          <span
+            role="status"
+            aria-label={`포획한 포켓몬 ${caughtCount}마리`}
+            className="ml-auto flex items-center gap-1 text-sm font-bold text-black"
+          >
+            <span className="pokeball" style={{ width: 18, height: 18 }} aria-hidden />
+            {caughtCount}마리
+          </span>
         </form>
 
         {filtered.length === 0 ? (

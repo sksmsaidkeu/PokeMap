@@ -129,21 +129,24 @@ export default async function MapPage() {
   ]
 
   // 전설 출현지: 현재 도 진행률 100%일 때만, 그 도의 is_legendary_site 시 노출(§15)
-  const [{ data: provProgress }, { data: legendaryCity }, { data: tierLabel }] = await Promise.all([
-    supabase
-      .from('v_user_province_progress')
-      .select('pct')
-      .eq('user_id', user.id)
-      .eq('province_id', currentProvinceId)
-      .maybeSingle(),
-    supabase
-      .from('cities')
-      .select('centroid, living_areas!inner(province_id)')
-      .eq('is_legendary_site', true)
-      .eq('living_areas.province_id', currentProvinceId)
-      .maybeSingle(),
-    supabase.rpc('calc_user_tier', { p_user_id: user.id }),
-  ])
+  const [{ data: provProgress }, { data: legendaryCity }, { data: tierLabel }, { count: totalSpecies }] =
+    await Promise.all([
+      supabase
+        .from('v_user_province_progress')
+        .select('pct')
+        .eq('user_id', user.id)
+        .eq('province_id', currentProvinceId)
+        .maybeSingle(),
+      supabase
+        .from('cities')
+        .select('centroid, living_areas!inner(province_id)')
+        .eq('is_legendary_site', true)
+        .eq('living_areas.province_id', currentProvinceId)
+        .maybeSingle(),
+      supabase.rpc('calc_user_tier', { p_user_id: user.id }),
+      // 헤더의 등급표 팝업(등급별 필요 포획 수 계산용)
+      supabase.from('pokemon_species').select('dex_no', { count: 'exact', head: true }),
+    ])
 
   const complete = provProgress?.pct != null && provProgress.pct >= 1
   const legendarySite =
@@ -155,6 +158,7 @@ export default async function MapPage() {
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
         // rpc 실패 시 최저 등급 폴백 — 헤더가 페이지를 막을 이유는 없다
         tier={TIER_BY_LABEL[tierLabel ?? ''] ?? 'monster'}
+        totalSpecies={totalSpecies ?? 0}
       />
       <MapContainer
         playerCentroid={playerCentroid}
