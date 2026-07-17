@@ -1,26 +1,22 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import FallingBackground from '@/components/auth/FallingBackground'
-import LoginForm from '@/components/auth/LoginForm'
+import LoginScreen from '@/components/auth/LoginScreen'
 
 export default async function LoginPage() {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (user) redirect('/map')
+  if (user) {
+    // 계정은 생성됐지만 bootstrap-location이 실패한 채 끊긴 세션(예: 닉네임 중복 재시도 중 이탈)이면
+    // user_progress가 없다 — 그 상태로 /map에 보내면 /map이 다시 /login으로 돌려보내 무한 리다이렉트가 된다.
+    const { data: progress } = await supabase
+      .from('user_progress')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (progress) redirect('/map')
+  }
 
-  return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-b from-[#cce8f4] to-[#e9f6fb] p-4">
-      <FallingBackground />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl border-4 border-black bg-white p-6 shadow-[0_8px_0_0_rgba(0,0,0,0.15)]">
-        <header className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span className="pokeball" style={{ width: 48, height: 48 }} aria-hidden />
-          <h1 className="text-2xl font-black tracking-tight">PokeMap</h1>
-          <p className="text-sm text-gray-600">우리 동네 포켓몬을 찾아 떠나는 모험</p>
-        </header>
-        <LoginForm />
-      </div>
-    </main>
-  )
+  return <LoginScreen />
 }

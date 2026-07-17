@@ -98,11 +98,12 @@ export default function LoginForm() {
     setCityId('')
     setCities([])
     if (next === '') return
-    // 도 → 생활권 → 시. 잠긴 섬 도는 애초에 목록에 없으므로 그 도의 시는 노출되지 않는다.
+    // 도 → 생활권 → 시. 잠긴 섬/엔드게임 생활권은 애초에 목록에 없으므로 그 도의 시는 노출되지 않는다.
     const { data: areas, error: areaErr } = await supabase
       .from('living_areas')
       .select('id')
       .eq('province_id', next)
+      .eq('is_endgame_area', false)
       .returns<{ id: number }[]>()
     if (areaErr) {
       setFormError('지역 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')

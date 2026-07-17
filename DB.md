@@ -87,7 +87,8 @@ Index: `idx_provinces_region ON provinces(region_id)`
 | `province_id` | smallint | FK → `provinces.id` NOT NULL |
 | `name` | text | NOT NULL, 예: '남부권' |
 | `color` | text | NOT NULL, 지도 표시용 hex |
-| `is_endgame_area` | boolean | NOT NULL DEFAULT false |
+| `is_endgame_area` | boolean | NOT NULL DEFAULT false, 도 전체가 아니라 생활권 하나만 최종 히든 지역인 경우(울릉권 37, 옹진군 36 — 마이그레이션 `20260716200001`). §16 게이트와 §7 진행률 뷰 제외 대상 |
+| `region_id_override` | smallint | NULL 허용, FK → `pokemon_regions.id`. 소속 도의 `region_id`를 생활권 단위로 덮어씀 — 울릉권/옹진군은 7(알로라지방). `20260716200000`에서 legacy로 드랍됐다가 `20260722000000`에서 재추가 |
 
 Constraint: `UNIQUE(province_id, name)`
 
@@ -112,7 +113,7 @@ Index: `idx_cities_living_area ON cities(living_area_id)`. Constraint(앱 레벨
 | `city_a_id` | int | FK → `cities.id` |
 | `city_b_id` | int | FK → `cities.id` |
 
-Constraint: `PRIMARY KEY(city_a_id, city_b_id)`, `CHECK(city_a_id < city_b_id)`. 조회는 `v_city_neighbors`(§7). 섬 지역(제주도 등)은 육지와 연결된 행이 없다 — 인접 이동만으로는 도달 자체가 불가능해 §16 최종 히든 지역이 별도 해금 조건을 갖는 이유.
+Constraint: `PRIMARY KEY(city_a_id, city_b_id)`, `CHECK(city_a_id < city_b_id)`. 조회는 `v_city_neighbors`(§7). 섬 지역은 실제 여객 항로를 따라 육지와 연결 행을 갖는다(완도군↔제주시, 포항시↔울릉군, 울릉군↔독도, 인천광역시↔옹진군, 마이그레이션 `20260722000000`) — `fn_move_city` 인접성 검증(§10.1 2단계)이 잠금 게이트보다 먼저 수행되므로, 연결 행이 없으면 해금 후에도 도달이 불가능하다. 도달 차단은 연결 부재가 아니라 `REGION_LOCKED` 게이트(§16)가 담당한다.
 
 ### 4.7 `pokemon_species`
 | 컬럼 | 타입 | 제약 |
@@ -155,7 +156,7 @@ Constraint: `UNIQUE(living_area_id, dex_no)`. 전설(`is_legendary=true`) 행은
 | `province_id` | smallint | FK → `provinces.id` |
 | `unlocked_at` | timestamptz | DEFAULT now() |
 
-Constraint: `PRIMARY KEY(user_id, province_id)`. 육지 도는 이동 자체에 해금 조건이 없어 이 테이블에 행을 만들지 않는다 — `is_island_endgame=true`인 도(제주도/울릉도·독도)만 §16 조건 충족 시 삽입.
+Constraint: `PRIMARY KEY(user_id, province_id)`. 육지 도는 이동 자체에 해금 조건이 없어 이 테이블에 행을 만들지 않는다 — `is_island_endgame=true`인 도(제주도)만 §16 조건 충족 시 삽입. 이동 게이트는 이 테이블이 아니라 `check_endgame_unlock`을 직접 평가하며(마이그레이션 `20260722000000`, 생활권 단위 endgame인 울릉권/옹진군은 소속 도가 육지라 행이 생기지 않기 때문), 이 행은 지도 잠금 표시용 기록이다.
 
 ### 4.11 `legendary_cooldowns`
 전설 포획 실패 후 재시도 잠금 — `next_available_at`이 여기 있다.
@@ -287,7 +288,7 @@ $$ LANGUAGE sql STABLE;
 ## 7. View
 
 - `v_city_neighbors` — `city_connections` 양방향 전개.
-- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용.
+- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용. endgame 생활권(`living_areas.is_endgame_area=true`, 울릉권/옹진군)은 집계에서 제외한다(마이그레이션 `20260722000000`) — 포함하면 소속 도(경상북도/인천광역시)의 100%가 미해금 지역 포획을 요구해 해금이 영구히 불가능한 순환 의존이 생긴다.
 - `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환).
 
 ## 8. RLS & Policy
@@ -307,21 +308,42 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 
 | 함수 | 트리거 | 역할 |
 |---|---|---|
-| `bootstrap-location` | 회원가입 직후(GPS 좌표 전달) | JWT로 요청자 확인 → 닉네임 검증 → 좌표를 육지 도(`is_island_endgame=false`) `cities.centroid`와 최근접 매칭(좌표 null/무효 시 서울 id=1 폴백) → `bootstrap_user` RPC로 `profiles`+`user_progress`를 원자 생성. `profiles`는 `no_direct_write` RLS라 이 함수(service_role)가 유일한 생성 경로다. |
-| `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 섬 지역은 `is_island_endgame=true`이고 `user_province_unlocks` 미해금이면 거부, 목적지 생활권이 `is_endgame_area=true`이면 동일하게 `check_endgame_unlock` 미충족 시 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `unlock-check` 호출 |
+| `bootstrap-location` | 회원가입 직후(닉네임+GPS 좌표 또는 수동 선택 시 전달) | 닉네임 검증 → 시작 시 확정(수동 선택 > GPS 최근접 > 서울 폴백) → `profiles`+`user_progress` 생성 |
+| `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 최종 히든 지역 — `is_island_endgame=true` 도 또는 `is_endgame_area=true` 생활권 — 은 `check_endgame_unlock` 미충족 시 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `check_endgame_unlock` 평가(§10 6단계) |
 | `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
-| `unlock-check` | `move-city` 내부 호출 | `check_endgame_unlock`으로 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
+| `unlock-check` | 폐기(독립 EF 없음) | `fn_move_city` 6단계 + `fn_catch_attempt` 포획 성공 경로에서 `check_endgame_unlock` 평가로 대체 — 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
 | `session-sweep` | Cron(5분) | 만료된 `encounter_sessions`를 `fled` 처리, 만료된 `legendary_cooldowns` 정리 |
+
+- `session-sweep` 구현: `pg_cron`이 5분마다 `fn_session_sweep()`을 직접 호출한다(순수 정리, pity/쿨다운 부여 없음 — 타임아웃 만료는 `trg_session_flee` 3회 실패 경로와 무관). EF는 수동 운영용 래퍼로, `service_role` key bearer일 때만 같은 함수를 호출한다.
 
 ## 10. Transaction 설계
 
 **`move-city`**:
 1. `SELECT ... FOR UPDATE` on `user_progress`
-2. 인접성 검증. 목적지가 섬 지역(`is_island_endgame=true`)이면 `user_province_unlocks` 해금 여부 추가 검증(미해금이면 거부), 목적지 생활권이 `is_endgame_area=true`(울릉권/옹진군)이면 `check_endgame_unlock`을 그 자리에서 재평가해 미충족 시 거부 — 육지 도의 나머지 생활권은 해금 검증 없음
+2. 인접성 검증. 목적지가 최종 히든 지역(`provinces.is_island_endgame=true` 또는 `living_areas.is_endgame_area=true`)이면 `check_endgame_unlock` 미충족 시 `REGION_LOCKED` 거부(마이그레이션 `20260722000000`) — 육지 도는 해금 검증 없음
 3. 목적지가 전설 출현지이고 해당 도 진행률 100%이며 `legendary_cooldowns.next_available_at`이 지났으면 → `is_legendary=true` 세션 생성(확률 판정 없음)
 4. 그 외에는 `calc_spawn_rate` 판정 → 성공 시 일반 세션 생성
 5. `user_progress.current_city_id` 갱신, 커밋
-6. 커밋 후 `unlock-check` 실행
+6. `check_endgame_unlock` 평가 — true면 섬 지역 idempotent 해금(같은 트랜잭션 내, §10.1)
+
+### 10.1 `move-city` 구현 (마이그레이션 `20260717000000_fn_move_city`)
+
+원자적 락(§10~11)을 JS 런타임에서 보장할 수 없으므로 트랜잭션 코어를 `public.fn_move_city(p_user_id uuid, p_to_city_id int) RETURNS json`(plpgsql, `SECURITY DEFINER`)로 구현하고, Edge Function은 JWT에서 `user_id`를 검증(§20)한 뒤 `service_role`로 이 함수를 rpc 호출하는 얇은 래퍼다. `fn_move_city` EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지) — 유저가 직접 호출 못 하게.
+
+- 락은 `user_progress` 행 `FOR UPDATE` 하나만(§11). `encounter_sessions`는 INSERT라 별도 락 불필요.
+- 잠금 게이트(2단계)는 마이그레이션 `20260722000000`에서 `check_endgame_unlock` 직접 평가로 교체 — `user_province_unlocks` 행 존재 검사로는 생활권 단위 endgame(울릉권/옹진군, 소속 도가 육지)을 표현할 수 없다. 두 층위(`is_island_endgame`/`is_endgame_area`) 모두 같은 게이트를 탄다.
+- 검증 실패는 `RAISE EXCEPTION`으로 코드 문자열(`NOT_ADJACENT`/`REGION_LOCKED`/`LEGENDARY_COOLDOWN`/`INVALID_INPUT`/`NO_PROGRESS`)을 message에 담아 던지고, EF가 이를 HTTP 4xx + `error.code`로 매핑.
+- `catch_rate_tier`(§13.1)는 아직 `calc_catch_rate_tier` DB 함수가 없어 `fn_move_city` 내부에서 CASE로 인라인 매핑한다. `catch-attempt` EF 작성 시 `calc_catch_rate_tier`로 추출·공용화 — 그때 이 인라인은 제거.
+- §10 6단계 `unlock-check`는 별도 EF를 만들지 않는 것으로 확정: `fn_move_city` 마지막에 `check_endgame_unlock`이 true면 섬 지역 `user_province_unlocks`를 idempotent 삽입한다(이동은 도감 진행률을 바꾸지 않으므로 사실상 재확인). 해금 조건이 실제로 바뀌는 유일한 시점은 포획 성공이므로 `fn_catch_attempt` 포획 성공 경로에도 동일 블록을 둔다(마이그레이션 `20260721000000_unlock_check_in_catch`) — 없으면 내륙 마지막 포획 직후 섬 이동이 한 번 거부되는 1이동 지연이 생긴다.
+
+### 10.2 `bootstrap-location` 구현 (마이그레이션 `20260718000000_fn_bootstrap_location`, `20260724000000_bootstrap_nickname_and_manual_city`)
+
+코어는 `public.fn_bootstrap_location(p_user_id uuid, p_nickname text, p_lat double precision, p_lng double precision, p_city_id int default null) RETURNS json`(plpgsql, `SECURITY DEFINER`)이고, Edge Function은 JWT에서 `user_id`를 검증(§20)하고 닉네임(2~20자)·좌표(둘 다 null이거나 둘 다 한국 근방)·`city_id`(양의 정수 또는 null) 형식만 검증한 뒤 `service_role`로 rpc 호출하는 얇은 래퍼다. EXECUTE 권한은 `service_role`에만 부여(anon/authenticated 금지). 원래(`20260718000000`) 3-인자 시그니처였다가 로그인 스트림 합류 시 닉네임+수동 선택을 추가하며 4-인자로 교체(구 시그니처는 명시적으로 DROP).
+
+- idempotent: `user_progress` 행이 이미 있으면 닉네임/좌표/`city_id`를 전부 무시하고 기존 `current_city_id`를 반환(`created:false`) — 재호출로 위치가 갱신되면 `move-city`의 인접성/해금 검증을 우회하는 무료 순간이동이 되므로 절대 갱신하지 않는다.
+- 시작 시 우선순위: `p_city_id`(GPS 실패 시 클라이언트 수동 선택) > GPS 좌표 최근접(`cities.centroid <->`) > 서울특별시 폴백(CLAUDE.md §6). 셋 다 최종 히든 지역(`provinces.is_island_endgame=true` 또는 `living_areas.is_endgame_area=true`)은 후보에서 제외 — `p_city_id`가 잠긴 시를 가리키면 `INVALID_CITY`(400). 도시 데이터가 없으면 `NO_CITY_DATA`(500).
+- **`profiles` 생성**: 클라이언트가 가입 시 입력한 실제 닉네임으로 생성(`INVALID_NICKNAME` 400은 EF가 길이로 선검증, DB는 유일성만 담당). 같은 `user_id` 재시도는 기존 프로필 유지, 다른 유저가 먼저 그 닉네임을 선점했으면 `NICKNAME_TAKEN`(409).
+- 동시 호출(더블클릭) 레이스는 `profiles` INSERT의 `unique_violation` 캐치 + `user_progress` INSERT `on conflict do nothing`으로 처리 — 행 락 불필요.
 
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`
@@ -375,10 +397,11 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 
 최종 히든 지역 게이트는 **두 단계**로 존재한다 — 도 전체가 엔드게임인 경우(`provinces.is_island_endgame`)와, 정상 도 안에 엔드게임 전용 생활권 하나만 섞여 있는 경우(`living_areas.is_endgame_area`, §4.4).
 
-- **제주도(도 단위)**: `provinces.is_island_endgame=true`인 도는 `city_connections`상 육지와 연결되지 않아(§4.6) 인접 이동으로는 도달할 수 없다. `check_endgame_unlock`: `is_island_endgame=false`인 모든 도가 100% 완료되어야 해금. 현재 `is_island_endgame=true`인 도는 제주도뿐이다.
-- **울릉도·독도(생활권 단위)**: 실제 행정구역상 경상북도 소속이라(§1 "도=실제 행정구역" 원칙) 별도 도로 만들지 않고, 경상북도 소속 생활권 `울릉권`(시 `울릉군`, 독도는 별도 시 엔티티 없이 포함)으로 시드하고 `living_areas.is_endgame_area=true`로 표시했다 — **더 이상 데이터 갭이 아니다.** 경상북도의 나머지 생활권은 평소대로 자유 이동, `울릉권`만 `check_endgame_unlock` 충족 전까지 이동 거부.
-  - `울릉군`은 `city_connections`에 인접 시가 없다(육지-도서 간 다리가 없어 §12 인접 그래프 계산 결과 고립) — 어차피 인접 이동으로는 못 오므로, `is_endgame_area` 게이트는 "언젠가 조건 충족 후 열어주는" 스위치 역할만 한다.
-- **옹진군(생활권 단위)**: 인천광역시 소속의 별도 생활권으로 동일하게 `is_endgame_area=true` — 서해 도서 지역(백령도·연평도 등)이라 육지 연결이 없는 것도 울릉권과 동일하다.
+- 최종 히든 지역은 두 층위: 도 전체(`provinces.is_island_endgame=true` — 제주도)와 생활권 단위(`living_areas.is_endgame_area=true` — 울릉권 37, 옹진군 36). 두 경우 모두 `fn_move_city`가 `check_endgame_unlock` 미충족 시 `REGION_LOCKED`로 거부한다(마이그레이션 `20260722000000`).
+- `check_endgame_unlock`: `is_island_endgame=false`인 모든 도가 100% 완료되어야 해금. 진행률 집계(§7 뷰)는 endgame 생활권을 제외하므로 순환 의존이 없다.
+- 도달 경로: 항로 연결 행(§4.6) — 완도군↔제주시, 포항시↔울릉군, 울릉군↔독도(city 164), 인천광역시↔옹진군.
+- 울릉권/옹진군은 `region_id_override=7`로 알로라지방 소속(§4.4). 스폰 풀은 알로라 종 8종(공통 3+고유 5)씩 시드 완료, 생활권 단위 endgame이라 전용 전설은 없다(`provinces.legendary_dex_no`는 도 단위).
+- ~~**데이터 갭**: 울릉도·독도 시드 없음~~ — 마이그레이션 `20260722000000`으로 해소(2026-07-17). `pokemon.csv`/`build_pokemon_db.py`는 배포된 시드와 이력이 어긋나 있어(알로라 풀 소진으로 override 생활권 행이 조용히 누락되는 버그) 재생성 금지, DB 시드가 SSOT.
 
 ## 17. `next_available_at` 상세
 

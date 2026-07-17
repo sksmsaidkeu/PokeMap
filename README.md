@@ -35,7 +35,7 @@ Browser (Next.js App Router)
 Supabase Postgres (RLS 전면 적용)
    │  service_role key (Edge Function 내부에서만)
    ▼
-Edge Functions: bootstrap-location / move-city / catch-attempt / unlock-check / session-sweep
+Edge Functions: bootstrap-location / move-city / catch-attempt / session-sweep
 ```
 
 스폰·포획·해금·전설 확률은 전부 서버(Edge Function + DB 함수)에서 판정한다. 클라이언트는 결과를 요청하고 표시할 뿐, 확률을 계산하지 않는다 — 근거는 `CLAUDE.md` §1, `DB.md` §12~15.
@@ -101,7 +101,7 @@ npm run start
 
 1. `supabase link --project-ref <project-ref>`로 원격 프로젝트 연결
 2. 로컬에서 검증한 마이그레이션만 반영: `supabase db push`
-3. Edge Function 배포: `supabase functions deploy bootstrap-location move-city catch-attempt unlock-check session-sweep`
+3. Edge Function 배포: `supabase functions deploy bootstrap-location move-city catch-attempt session-sweep`
 4. 시드 데이터(`korea_living_areas.csv`, `pokemon.csv`)는 `build_pokemon_db.py` 산출물을 그대로 마이그레이션 시드 SQL로 변환해 반영 — 코드에 하드코딩하지 않는다.
 
 ## Deploy
