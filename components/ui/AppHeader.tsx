@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from './Modal'
 import { BallIcon } from './BallIcon'
+import { EditNicknameModal } from './EditNicknameModal'
 import { TIER_ORDER, TIERS, type UserTier } from '@/lib/game/tier'
 
 export type { UserTier }

@@ -187,6 +187,8 @@ export default async function MapPage() {
         zones={zones}
         legendarySite={legendarySite}
         tier={tier}
+        labels={labels}
+        provinceId={currentProvinceId}
       />
     </main>
   )
