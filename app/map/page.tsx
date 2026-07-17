@@ -151,7 +151,6 @@ export default async function MapPage() {
     <main className="flex h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
-        // rpc 실패 시 최저 등급 폴백 — 헤더가 페이지를 막을 이유는 없다
         tier={tierFromLabel(tierLabel)}
         totalSpecies={totalSpecies ?? 0}
       />
