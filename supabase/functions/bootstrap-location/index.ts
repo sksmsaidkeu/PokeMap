@@ -2,7 +2,7 @@
 // 책임은 하나 — JWT에서 user_id를 검증(§20)한 뒤 service_role로
 // fn_bootstrap_location을 호출하고 결과를 { data, error } + error.code로 매핑한다.
 // 좌표가 null이면(GPS 거부) DB 함수가 서울특별시 폴백을 처리한다(CLAUDE.md §6).
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { CORS, adminClient, methodNotAllowed, reply, verifyUser } from '../_shared/http.ts'
 
 // RAISE EXCEPTION 코드 문자열 → HTTP 상태
 const CODE_STATUS: Record<string, number> = {
@@ -11,41 +11,12 @@ const CODE_STATUS: Record<string, number> = {
   UNAUTHENTICATED: 401,
 }
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function reply(status: number, data: unknown, error: { code: string; message: string } | null) {
-  return new Response(JSON.stringify({ data, error }), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  })
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
-  if (req.method !== 'POST') return reply(405, null, { code: 'INVALID_INPUT', message: 'POST only' })
+  if (req.method !== 'POST') return methodNotAllowed()
 
-  const authHeader = req.headers.get('Authorization') ?? ''
-  if (!/^Bearer\s+.+/i.test(authHeader)) {
-    return reply(401, null, { code: 'UNAUTHENTICATED', message: 'missing bearer token' })
-  }
-
-  const url = Deno.env.get('SUPABASE_URL')!
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-  // JWT 검증 → user_id (service_role은 RLS를 우회하므로 이 검증이 유일한 방어선, §20)
-  const authClient = createClient(url, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  })
-  const { data: userData, error: userErr } = await authClient.auth.getUser()
-  if (userErr || !userData.user) {
-    return reply(401, null, { code: 'UNAUTHENTICATED', message: 'invalid token' })
-  }
-  const userId = userData.user.id
+  const { userId, errorResponse } = await verifyUser(req)
+  if (errorResponse) return errorResponse
 
   // 입력 검증: 둘 다 null(폴백)이거나 둘 다 한국 근방 범위 안의 숫자(§20)
   let body: { lat?: unknown; lng?: unknown }
@@ -72,7 +43,7 @@ Deno.serve(async (req) => {
   }
 
   // 최근접 매칭 + user_progress 생성 (idempotent, DB 함수 내부)
-  const admin = createClient(url, serviceKey)
+  const admin = adminClient()
   const { data, error } = await admin.rpc('fn_bootstrap_location', {
     p_user_id: userId,
     p_lat: lat,

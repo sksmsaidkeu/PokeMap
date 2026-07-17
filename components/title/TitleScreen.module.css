@@ -1,15 +1,3 @@
-:root {
-  --bg-top: #0a0e1c;
-  --bg-mid: #101a33;
-  --bg-horizon: #1c2c4d;
-  --accent-gold: #f4c15c;
-  --accent-cyan: #6fe0d6;
-  --accent-violet: #a98ee8;
-  --text-cream: #ede6d6;
-  --line-slate: #3e5273;
-  --shadow: #04060c;
-}
-
 .stage {
   position: fixed;
   inset: 0;

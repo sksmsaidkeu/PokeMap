@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AnimatedRegionMap from './AnimatedRegionMap'
 import { moveCity, type MoveCitySuccess, type MoveCityError } from '@/lib/game/moveCity'
@@ -28,11 +28,13 @@ export function MapContainer({
 }: MapContainerProps) {
   const router = useRouter()
   const [moving, setMoving] = useState(false)
+  const [refreshing, startRefresh] = useTransition()
   const [error, setError] = useState<MoveCityError | null>(null)
+  const locked = moving || refreshing
 
   const handleArrowClick = useCallback(
     async (_dir: Neighbor['dir'], cityId: number) => {
-      if (moving) return
+      if (locked) return
       // 화이트리스트 검증: 서버로 보내기 전 실제 잠금 해제된 이웃만 허용(§20)
       const target = neighbors.find((n) => n.cityId === cityId)
       if (!target || target.locked) return
@@ -56,11 +58,13 @@ export function MapContainer({
         return
       }
 
-      // 조우 없음: 서버 상태(새 centroid/이웃) 재검증으로만 재중심(§11), moving은 refresh 후 해제
-      router.refresh()
+      // 조우 없음: 서버 상태(새 centroid/이웃) 재검증으로만 재중심(§11).
+      // router.refresh()는 void를 반환해 완료를 await할 수 없으므로,
+      // startTransition의 refreshing으로 RSC 재요청이 실제로 끝날 때까지 입력을 막는다.
       setMoving(false)
+      startRefresh(() => router.refresh())
     },
-    [moving, neighbors, onMoveResult, router],
+    [locked, neighbors, onMoveResult, router],
   )
 
   return (
@@ -69,7 +73,7 @@ export function MapContainer({
         playerCentroid={playerCentroid}
         neighbors={neighbors}
         legendarySite={legendarySite}
-        moving={moving}
+        moving={locked}
         onArrowClick={handleArrowClick}
       />
       {error && (

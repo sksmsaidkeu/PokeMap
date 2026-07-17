@@ -2,7 +2,7 @@
 // 책임은 하나 — JWT에서 user_id를 검증(§20)한 뒤 service_role로 fn_move_city를
 // 호출하고 그 결과/에러를 { data, error } + error.code(HTTP 4xx)로 매핑한다.
 // 스폰/전설/락 판정은 전부 DB 함수 안에서만 일어난다(클라이언트/EF는 확률 미계산).
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { CORS, adminClient, methodNotAllowed, reply, verifyUser } from '../_shared/http.ts'
 
 // RAISE EXCEPTION 코드 문자열 → HTTP 상태
 const CODE_STATUS: Record<string, number> = {
@@ -14,41 +14,12 @@ const CODE_STATUS: Record<string, number> = {
   UNAUTHENTICATED: 401,
 }
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function reply(status: number, data: unknown, error: { code: string; message: string } | null) {
-  return new Response(JSON.stringify({ data, error }), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  })
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
-  if (req.method !== 'POST') return reply(405, null, { code: 'INVALID_INPUT', message: 'POST only' })
+  if (req.method !== 'POST') return methodNotAllowed()
 
-  const authHeader = req.headers.get('Authorization') ?? ''
-  if (!/^Bearer\s+.+/i.test(authHeader)) {
-    return reply(401, null, { code: 'UNAUTHENTICATED', message: 'missing bearer token' })
-  }
-
-  const url = Deno.env.get('SUPABASE_URL')!
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-  // JWT 검증 → user_id (service_role은 RLS를 우회하므로 이 검증이 유일한 방어선, §20)
-  const authClient = createClient(url, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  })
-  const { data: userData, error: userErr } = await authClient.auth.getUser()
-  if (userErr || !userData.user) {
-    return reply(401, null, { code: 'UNAUTHENTICATED', message: 'invalid token' })
-  }
-  const userId = userData.user.id
+  const { userId, errorResponse } = await verifyUser(req)
+  if (errorResponse) return errorResponse
 
   // 입력 검증: to_city_id는 양의 정수만(§20 범위 검증)
   let body: { to_city_id?: unknown }
@@ -63,7 +34,7 @@ Deno.serve(async (req) => {
   }
 
   // 원자적 이동 실행 (락/판정은 DB 함수 내부)
-  const admin = createClient(url, serviceKey)
+  const admin = adminClient()
   const { data, error } = await admin.rpc('fn_move_city', {
     p_user_id: userId,
     p_to_city_id: toCityId,

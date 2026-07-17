@@ -1,3 +1,17 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* TitleScreen 전용 색상 변수 — CSS Modules는 :root(로컬 클래스 없는 순수 전역 선택자)를
+   허용하지 않아 여기로 옮김(참조는 TitleScreen.module.css의 로컬 클래스에서 var()로 계속 사용). */
+:root {
+  --bg-top: #0a0e1c;
+  --bg-mid: #101a33;
+  --bg-horizon: #1c2c4d;
+  --accent-gold: #f4c15c;
+  --accent-cyan: #6fe0d6;
+  --accent-violet: #a98ee8;
+  --text-cream: #ede6d6;
+  --line-slate: #3e5273;
+  --shadow: #04060c;
+}

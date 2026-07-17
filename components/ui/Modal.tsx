@@ -12,9 +12,13 @@ export type ModalProps = {
 export function Modal({ open, onClose, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // open 전환 시에만 포커스 이동 — onClose 재생성마다 재실행되면 포커스가 계속 패널로 튕겨나간다
+  useEffect(() => {
+    if (open) panelRef.current?.focus()
+  }, [open])
+
   useEffect(() => {
     if (!open) return
-    panelRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }

@@ -145,12 +145,15 @@ export default function EncounterClient({
     return () => c.stop()
   }, [phase, reduced])
 
+  // phase가 'active'를 벗어나면(포획/도망 확정) 더 셀 시간이 없다 — 결과가 난 뒤에도
+  // 계속 재렌더되며 goMap이 매초 새로 생성돼 Result 모달 포커스를 방해하는 것도 함께 방지.
   useEffect(() => {
+    if (phase !== 'active') return
     const tick = () => setRemainingMs(Date.parse(expiresAt) - Date.now())
     tick()
     const t = setInterval(tick, 1000)
     return () => clearInterval(t)
-  }, [expiresAt])
+  }, [expiresAt, phase])
 
   // 클라이언트 타이머 만료 → 자동 도망 표시. 최종 진실은 서버(SESSION_EXPIRED)와 동일 처리.
   useEffect(() => {

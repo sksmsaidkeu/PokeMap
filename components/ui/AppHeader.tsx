@@ -31,8 +31,12 @@ export function AppHeader({ trainerName, tier }: AppHeaderProps) {
 
   async function handleLogout() {
     setSigningOut(true)
-    await createClient().auth.signOut()
-    router.replace('/login')
+    try {
+      await createClient().auth.signOut()
+      router.replace('/login')
+    } catch {
+      setSigningOut(false)
+    }
   }
 
   return (
