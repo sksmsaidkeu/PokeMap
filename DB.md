@@ -288,8 +288,8 @@ $$ LANGUAGE sql STABLE;
 ## 7. View
 
 - `v_city_neighbors` — `city_connections` 양방향 전개.
-- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용. endgame 생활권(`living_areas.is_endgame_area=true`, 울릉권/옹진군)은 집계에서 제외한다(마이그레이션 `20260722000000`) — 포함하면 소속 도(경상북도/인천광역시)의 100%가 미해금 지역 포획을 요구해 해금이 영구히 불가능한 순환 의존이 생긴다.
-- `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환).
+- `v_user_province_progress` — 유저별 도별 포획 수 / 배정 수(전설 제외, 일반종 기준). `check_endgame_unlock`, 전설 출현 조건(§15), Pokedex 진행률 표시에 재사용. endgame 생활권(`living_areas.is_endgame_area=true`, 울릉권/옹진군)은 집계에서 제외한다(마이그레이션 `20260722000000`) — 포함하면 소속 도(경상북도/인천광역시)의 100%가 미해금 지역 포획을 요구해 해금이 영구히 불가능한 순환 의존이 생긴다. **`security_invoker = true`(마이그레이션 `20260726000000`, §18 참고)** — 이 뷰는 `profiles`를 CROSS JOIN하는 최상위 테이블로 삼으므로, `security_invoker=true`만으로 `profiles.select_own` RLS가 조회자 컨텍스트에 재적용되어 자기 자신의 도별 진행률만 남는다(`v_region_pokedex_status`처럼 조인 조건에 `auth.uid()`를 명시하지 않아도 됨 — 그렇게 하면 `check_endgame_unlock` 자체는 `SECURITY INVOKER`(기본값)지만 이를 호출하는 `fn_move_city`가 `SECURITY DEFINER`라 그 내부에서는 role이 소유자 `postgres`로 승격되어 실행되고, 그 컨텍스트에서 `auth.uid()`가 `NULL`이 되어 항상 0행이 되고 해금 판정이 깨진다).
+- `v_user_tier` — `calc_user_tier`를 유저 목록에 대해 미리 계산해 헤더 렌더링 시 재계산 비용을 줄이는 캐시 뷰(머티리얼라이즈드 뷰 후보, 트래픽 증가 시 전환). **`security_invoker = true`(마이그레이션 `20260726000000`)** — 위와 동일한 이유.
 
 ## 8. RLS & Policy
 
@@ -418,5 +418,5 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 - **파라미터**: 없음(뷰 컬럼). 조회 시 `city_id`로 등치 필터링해 사용(맵의 `onLabelClick(cityId)`가 그대로 키가 됨 — `living_area_id`로 한 단계 더 조회하는 왕복 없이 1쿼리로 끝남, §21 N+1 금지).
 - **반환 컬럼**: `city_id`(필터 키), `living_area_id`, `dex_no`, `category`(`공통`/`고유`), `is_legendary`, `caught boolean`(해당 유저의 `user_pokedex` 존재 여부), `catch_count`(미포획 시 0).
 - **RLS 방식 — SECURITY INVOKER 필수, DEFINER 절대 금지**: PostgreSQL 15+에서 뷰는 기본적으로 **소유자(postgres) 권한**으로 실행된다 — `WITH (security_invoker = true)`를 명시하지 않으면 조회자가 누구든 뷰 내부의 `user_pokedex` 접근이 소유자 권한으로 이뤄져 `select_own` RLS가 무시되고(=SECURITY DEFINER와 동일한 효과) **타 유저의 포획 기록이 그대로 노출**된다. 반드시 `security_invoker = true`로 생성해 조회자의 `auth.uid()` 컨텍스트에서 `user_pokedex` RLS가 재적용되게 한다. `LEFT JOIN user_pokedex up ON up.dex_no = rsp.dex_no AND up.user_id = auth.uid()`로 조인 조건에도 명시적으로 `auth.uid()`를 걸어 RLS가 우연히도 어긋나는 상황에 이중 방어한다.
-- 기존 `v_user_province_progress`/`v_user_tier`(§7)는 `security_invoker` 없이 생성되어 있어 이 규칙을 따르지 않는다 — 이번 신규 뷰에서 우연히 답습하지 않도록 별도 명시. 두 기존 뷰의 소급 수정은 이번 스코프 밖(호출부가 항상 `p_user_id`로 필터링하는 `SECURITY DEFINER` 함수 내부에서만 쓰여 현재는 직접 노출 경로가 없음 — 별도 검토 필요 시 팀 협의).
+- ~~기존 `v_user_province_progress`/`v_user_tier`(§7)는 `security_invoker` 없이 생성되어 있어 이 규칙을 따르지 않는다~~ **(수정 완료, 마이그레이션 `20260726000000`)**. 소급 수정을 스코프 밖으로 미룬 근거("호출부가 항상 `p_user_id`로 필터링하는 `SECURITY DEFINER` 함수 내부에서만 쓰여 현재는 직접 노출 경로가 없음")는 게이트 리뷰에서 틀렸음이 확인됨 — `app/map/page.tsx`가 `v_user_province_progress`를 `.from()`으로 직접 SELECT하고(익명 키 + 유저 세션, `service_role`이 아님), `lib/game/pokedex-data.ts`는 `user_id` 필터조차 없이 전체 SELECT한다. `security_invoker` 없는 뷰는 소유자(`postgres`, RLS 우회) 권한으로 실행되므로 이 두 경로 모두 PostgREST를 통해 타 유저의 도별 진행률이 그대로 노출될 수 있었다(anon/authenticated에 `GRANT ALL`까지 걸려 있어 REST API로 직접 호출도 가능). `security_invoker=true` 적용 후에는 `SECURITY DEFINER` 함수(`postgres` 소유, RLS 우회 유지) 경로는 동작 불변, 클라이언트 직접 SELECT 경로는 `profiles.select_own` RLS로 자동 제한된다.
 - 클라이언트 wrapper: `lib/game/regionSpawnStatus.ts`의 `getRegionSpawnStatus(cityId)` — `anon` key로 뷰를 직접 SELECT(Edge Function 아님, 확률/쓰기 없는 순수 조회라 EF 불필요).
