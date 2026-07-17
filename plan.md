@@ -45,6 +45,7 @@
 - [x] 등급 배지 + 트레이너명 + 설정/로그아웃을 도감 상단에 노출
 - main에 병합된 공통 `AppHeader`(map과 공유) 재사용, `calc_user_tier` RPC + 프로필 닉네임 조회로 렌더
 
-### 7. 실데이터 로그인 연동 마무리
-- [ ] 프리뷰 모드 → 실제 로그인 유저 데이터로 검증/전환
-- 막힘: `login` 브랜치(auth + bootstrap) 병합 대기. 병합 시 쿠키 세션으로 `user_pokedex` 자동 조회됨
+### 7. 실데이터 로그인 연동 마무리 ✅ 완료
+- [x] 프리뷰 모드 → 실제 로그인 유저 데이터로 검증/전환
+- 실제 테스트 계정으로 가입→이동→조우→포획 전 루프를 원격 프로젝트에 직접 실행해 검증(회원가입 → `bootstrap-location` → `move-city` → `catch-attempt`). `user_pokedex`/`v_user_province_progress`가 정확히 갱신되고 도감 상세 데이터(§4)까지 정상 반영됨을 확인 후 테스트 계정 삭제로 정리
+- 검증 중 원격 DB가 로컬 마이그레이션보다 3개 뒤처져 있던 걸 발견(`island_reachability`/`review_fixes`/`bootstrap_nickname_and_manual_city` 미적용) — 회원가입 시 닉네임이 무시되던 실제 버그였고, 이번에 원격에 적용해 해소
