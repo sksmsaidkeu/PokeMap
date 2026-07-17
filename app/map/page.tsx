@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
-import { AppHeader, tierFromLabel } from '@/components/ui/AppHeader'
+import { AppHeader } from '@/components/ui/AppHeader'
+import { tierFromLabel } from '@/components/ui/tier'
 
 // PostgREST는 point를 "(lon,lat)" 문자열로 반환 → {lon,lat} 파싱
 // 실패 시 (0,0) 폴백이 바다를 조용히 렌더하는 것보다 즉시 실패가 낫다

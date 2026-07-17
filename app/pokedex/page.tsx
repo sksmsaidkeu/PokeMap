@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { PokedexBrowser } from "@/components/pokedex/PokedexBrowser";
 import { getPokedexProvinceGroups } from "@/lib/game/pokedex-data";
 import { applyPreview, isPreviewLevel } from "./preview-fixtures";
-import { AppHeader, tierFromLabel } from "@/components/ui/AppHeader";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { tierFromLabel } from "@/components/ui/tier";
 
 // ?preview=full|half|newbie 는 로그인 없이도 QA용 완성도 더미를 볼 수 있게 auth 가드를 우회한다(PRD §5는 실데이터 접근만 대상)
 export default async function PokedexPage({
