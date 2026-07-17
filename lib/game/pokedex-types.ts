@@ -11,6 +11,23 @@ export type PokemonSpeciesRow = Pick<
   | "height_dm"
   | "weight_hg"
   | "primary_ability"
+  | "evo_chain_id"
+  | "evo_stage"
+>;
+
+// 진화 라인 표시용 — 상세 팝업 스와이프 캐러셀 각 패널 데이터(pokemon_species에서 chain 단위 조회)
+export type EvolutionMember = Pick<
+  Database["public"]["Tables"]["pokemon_species"]["Row"],
+  | "dex_no"
+  | "name_kr"
+  | "type1"
+  | "type2"
+  | "bst"
+  | "flavor_text"
+  | "height_dm"
+  | "weight_hg"
+  | "primary_ability"
+  | "evo_stage"
 >;
 
 export type PokedexEntryRow = Pick<

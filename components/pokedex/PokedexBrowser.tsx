@@ -42,13 +42,15 @@ export function PokedexBrowser({ groups, caughtCount }: PokedexBrowserProps) {
           onSubmit={(e) => e.preventDefault()}
           role="search"
         >
-          {/* 터치 타깃 44px 이상(PRD §23) — h-11/w-11 고정 */}
+          {/* 지도로 돌아가기 — 아이콘만으론 용도가 불분명해 라벨 병기(터치 타깃 44px 이상, PRD §23) */}
           <Link
             href="/map"
             aria-label="지도로 돌아가기"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#e3350d] font-bold text-white hover:brightness-110"
+            className="flex h-11 shrink-0 items-center gap-1 rounded-lg bg-[#e3350d] px-3 font-bold text-white hover:brightness-110"
           >
-            ‹
+            <span aria-hidden>‹</span>
+            <span aria-hidden className="text-base leading-none">🗺️</span>
+            <span className="hidden text-sm sm:inline">지도</span>
           </Link>
           <input
             type="text"
