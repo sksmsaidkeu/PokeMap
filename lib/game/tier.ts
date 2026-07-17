@@ -3,15 +3,16 @@
 // 'use client' 모듈의 export는 서버에서 컴포넌트/props로만 쓸 수 있고 함수로 직접 호출은 불가.
 export type UserTier = 'monster' | 'super' | 'hyper' | 'master'
 
-// 스프라이트 에셋 확보 전까지 볼 고유색 원형으로 대체 — 에셋 도착 시 badgeClass 자리를 <Image>로 교체.
 // 표시 전용 배지: 볼 종류 선택 UI 아님(PRD §17, CLAUDE.md §22)
 // pct는 calc_user_tier(DB.md §6.5)의 등급 임계값과 동일 — 바뀌면 두 곳 다 갱신 필요.
+// topColor: 미니멀 벡터 볼(BallIcon)의 상단 반원 색. 하단은 흰색 공통, 등급색으로만 구분
+//   (몬스터=빨강, 슈퍼=파랑, 하이퍼=노랑, 마스터=보라).
 export const TIER_ORDER: UserTier[] = ['monster', 'super', 'hyper', 'master']
-export const TIERS: Record<UserTier, { label: string; badgeClass: string; pct: number }> = {
-  monster: { label: '몬스터볼', badgeClass: 'bg-red-500', pct: 0 },
-  super: { label: '슈퍼볼', badgeClass: 'bg-blue-600', pct: 0.3 },
-  hyper: { label: '하이퍼볼', badgeClass: 'bg-yellow-400', pct: 0.6 },
-  master: { label: '마스터볼', badgeClass: 'bg-purple-600', pct: 0.9 },
+export const TIERS: Record<UserTier, { label: string; topColor: string; pct: number }> = {
+  monster: { label: '몬스터볼', topColor: '#e3350d', pct: 0 },
+  super: { label: '슈퍼볼', topColor: '#2a75bb', pct: 0.3 },
+  hyper: { label: '하이퍼볼', topColor: '#f6b40c', pct: 0.6 },
+  master: { label: '마스터볼', topColor: '#7b3fa0', pct: 0.9 },
 }
 
 const TIER_BY_LABEL: Record<string, UserTier> = {

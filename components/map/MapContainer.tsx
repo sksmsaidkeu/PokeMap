@@ -6,6 +6,7 @@ import AnimatedRegionMap from './AnimatedRegionMap'
 import { DEFAULT_ZOOM, type CityLabel } from './RegionMap'
 import { RegionPokemonPanel } from './RegionPokemonPanel'
 import { moveCity, type MoveCitySuccess, type MoveCityError } from '@/lib/game/moveCity'
+import type { UserTier } from '@/lib/game/tier'
 
 export type LatLng = { lon: number; lat: number }
 export type Neighbor = {
@@ -29,8 +30,7 @@ export type MapContainerProps = {
   neighbors: Neighbor[]
   zones?: Zone[]
   legendarySite: LatLng | null
-  labels?: CityLabel[]
-  provinceId?: number // 지역별 배경색(plan.md #8) — RegionMap에 그대로 전달
+  tier: UserTier // 플레이어 마커 볼 스프라이트 결정
   // motion 훅: 이동 성공 시 응답을 넘겨 마커 애니메이션/전환을 구동(미제공 시 기본 네비게이션).
   onMoveResult?: (result: MoveCitySuccess) => void
 }
@@ -40,8 +40,7 @@ export function MapContainer({
   neighbors,
   zones = [],
   legendarySite,
-  labels,
-  provinceId,
+  tier,
   onMoveResult,
 }: MapContainerProps) {
   const router = useRouter()
@@ -148,9 +147,7 @@ export function MapContainer({
         neighbors={neighbors}
         legendarySite={legendarySite}
         moving={locked}
-        zoom={zoom}
-        labels={labels}
-        provinceId={provinceId}
+        tier={tier}
         onArrowClick={handleArrowClick}
         onLabelClick={handleLabelClick}
       />

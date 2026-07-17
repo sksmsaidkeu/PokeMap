@@ -170,13 +170,15 @@ export default async function MapPage() {
   const legendarySite =
     complete && legendaryCity ? parsePoint(legendaryCity.centroid) : null
 
+  const tier = tierFromLabel(tierLabel)
+
   return (
     // h-screen(고정) — min-h-screen(하한선)이면 지도 SVG의 viewBox 종횡비가
     // flex-1 자식의 min-h-0과 맞물려도 컨테이너 자체가 내용에 맞춰 늘어나 버린다.
     <main className="flex h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
-        tier={tierFromLabel(tierLabel)}
+        tier={tier}
         totalSpecies={totalSpecies ?? 0}
       />
       <MapContainer
@@ -184,8 +186,7 @@ export default async function MapPage() {
         neighbors={neighbors}
         zones={zones}
         legendarySite={legendarySite}
-        labels={labels}
-        provinceId={currentProvinceId}
+        tier={tier}
       />
     </main>
   )

@@ -42,6 +42,74 @@ export function geoPath(geometry: Geometry, project: (lon: number, lat: number) 
   return ringsOf(geometry).map((ring) => ringToSubpath(ring, project)).join(' ')
 }
 
+// 라벨 배치용 대표점: 지오메트리에서 면적이 가장 큰 링(본토 조각)의 면적가중 중심을 투영좌표로
+// 반환. 작은 부속 섬에 라벨이 찍히는 걸 막고, 오목한 형태에서도 무게중심이 대체로 도형 안에 든다.
+export function polygonLabelPoint(
+  geometry: Geometry,
+  project: (lon: number, lat: number) => Point,
+): Point {
+  const rings: number[][][] =
+    geometry.type === 'MultiPolygon' ? geometry.coordinates.flat() : geometry.coordinates
+  let bestPts: Point[] | null = null
+  let bestArea = -1
+  for (const ring of rings) {
+    const pts = ring.map(([lon, lat]) => project(lon, lat))
+    let a = 0
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i]
+      const q = pts[(i + 1) % pts.length]
+      a += p.x * q.y - q.x * p.y
+    }
+    a = Math.abs(a * 0.5)
+    if (a > bestArea) {
+      bestArea = a
+      bestPts = pts
+    }
+  }
+  const pts = bestPts ?? []
+  let area = 0
+  let cx = 0
+  let cy = 0
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]
+    const q = pts[(i + 1) % pts.length]
+    const cross = p.x * q.y - q.x * p.y
+    area += cross
+    cx += (p.x + q.x) * cross
+    cy += (p.y + q.y) * cross
+  }
+  area *= 0.5
+  if (Math.abs(area) < 1e-9) {
+    // 퇴화(면적 0) 링 → 정점 평균으로 폴백
+    const n = pts.length || 1
+    return {
+      x: pts.reduce((s, p) => s + p.x, 0) / n,
+      y: pts.reduce((s, p) => s + p.y, 0) / n,
+    }
+  }
+  return { x: cx / (6 * area), y: cy / (6 * area) }
+}
+
+// 라벨 우선순위용: 가장 큰 링의 투영 면적(부속 섬 제외한 본토 크기 근사).
+export function labelRingArea(
+  geometry: Geometry,
+  project: (lon: number, lat: number) => Point,
+): number {
+  const rings: number[][][] =
+    geometry.type === 'MultiPolygon' ? geometry.coordinates.flat() : geometry.coordinates
+  let best = 0
+  for (const ring of rings) {
+    let a = 0
+    for (let i = 0; i < ring.length; i++) {
+      const p = project(ring[i][0], ring[i][1])
+      const q = project(ring[(i + 1) % ring.length][0], ring[(i + 1) % ring.length][1])
+      a += p.x * q.y - q.x * p.y
+    }
+    best = Math.max(best, Math.abs(a * 0.5))
+  }
+  return best
+}
+
 function ringToSubpath(ring: number[][], project: (lon: number, lat: number) => Point): string {
   let d = ''
   for (let i = 0; i < ring.length; i++) {

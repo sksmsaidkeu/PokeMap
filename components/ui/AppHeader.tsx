@@ -4,10 +4,15 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from './Modal'
-import { EditNicknameModal } from './EditNicknameModal'
+import { BallIcon } from './BallIcon'
 import { TIER_ORDER, TIERS, type UserTier } from '@/lib/game/tier'
 
 export type { UserTier }
+
+// 등급 볼 배지 — 미니멀 벡터 볼(등급색). 지도 마커와 동일 스타일.
+function TierBall({ tier, size }: { tier: UserTier; size: number }) {
+  return <BallIcon topColor={TIERS[tier].topColor} size={size} label={TIERS[tier].label} />
+}
 
 export type AppHeaderProps = {
   trainerName: string
@@ -23,7 +28,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
   const [signingOut, setSigningOut] = useState(false)
   const [tierInfoOpen, setTierInfoOpen] = useState(false)
 
-  const { label, badgeClass } = TIERS[tier]
+  const { label } = TIERS[tier]
 
   async function handleLogout() {
     setSigningOut(true)
@@ -48,7 +53,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
             onClick={() => setTierInfoOpen(true)}
             className="flex flex-col items-center"
           >
-            <span aria-hidden className={`h-6 w-6 rounded-full border-2 border-black ${badgeClass}`} />
+            <TierBall tier={tier} size={24} />
             <span className="text-[10px] font-bold text-black">{label}</span>
           </button>
           <span className="text-sm font-bold text-black">{trainerName}</span>
@@ -167,7 +172,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
                   isCurrent ? 'border-black bg-[#F0F0F0]' : 'border-transparent'
                 }`}
               >
-                <span aria-hidden className={`h-5 w-5 shrink-0 rounded-full border-2 border-black ${info.badgeClass}`} />
+                <span className="flex shrink-0 items-center"><TierBall tier={t} size={20} /></span>
                 <span className="flex-1 text-sm font-bold text-black">{info.label}</span>
                 <span className="text-sm text-black/70">
                   {needed === 0 ? '기본' : `${needed}마리 이상`}
