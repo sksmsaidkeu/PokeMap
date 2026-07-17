@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import rawMap from '@/files/korea_map_data.min.json'
 import rawMunis from '@/files/korea_municipalities.min.json'
 import { BallGlyph } from '@/components/ui/BallIcon'
@@ -33,6 +33,9 @@ export interface RegionMapProps {
   legendarySite?: LonLat | null // 도 100% 완공 시 전설 출현지
   moving?: boolean // 서버 이동 응답 대기 중 — 화살표 dim + 입력 차단(§2 낙관적 업데이트 금지)
   tier: UserTier // 플레이어 등급 — 마커를 해당 등급 볼 스프라이트로 표시
+  zoom: number // viewBox 확대 배율(clamp 전) — 조작 UI는 이번 스코프 밖, 상위에서 고정값 전달
+  labels?: CityLabel[] // 마커 근처에 띄우는 클릭 가능한 시 이름(플레이어 자신 + 이웃)
+  provinceId?: number // SVG 레터박스 배경색 결정용
   onArrowClick: (dir: Dir, cityId: number) => void
   onLabelClick?: (cityId: number) => void // "이동"(화살표)과 구분되는 "정보 보기" — 실제 동작은 이 스코프 밖
 }
@@ -48,63 +51,6 @@ const PROJ = createProjection(map.main_map_bounds, 1000)
 const SYMBOLIC_DOTS: { color: string; p: Point }[] = map.hidden_areas
   .filter((h) => h.real_geometry == null && h.real_point != null)
   .map((h) => ({ color: h.color, p: PROJ.project(h.real_point![0], h.real_point![1]) }))
-
-// min.json은 생활권(색) 단위로 병합된 폴리곤이라 시/군/구 경계가 별도 필드로 없다 —
-// 대신 원본 GeoJSON에는 병합 전 개별 시/군/구 링이 그대로 남아있어(dissolve 안 됨),
-// 한 생활권 안에서 두 번 등장하는 변(edge)이 곧 인접 시/군/구가 맞닿는 접합선이다.
-// plan.md #7: 그 접합선만 점선으로, 다른 색과 맞닿는 진짜 외곽선/해안선은 실선 유지.
-const EDGE_PRECISION = 5 // 원본 좌표에 1e-6~1e-7도 수준 부동소수 노이즈가 있어(~1m 허용) 반올림 후 비교해야 매칭됨
-
-function edgeKey(a: number[], b: number[]): string {
-  const ka = `${a[0].toFixed(EDGE_PRECISION)},${a[1].toFixed(EDGE_PRECISION)}`
-  const kb = `${b[0].toFixed(EDGE_PRECISION)},${b[1].toFixed(EDGE_PRECISION)}`
-  return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
-}
-
-function segPath(a: Point, b: Point): string {
-  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`
-}
-
-function classifyEdges(geometry: Geometry): { solid: string[]; dashed: string[] } {
-  const counts = new Map<string, number>()
-  const segs: { key: string; a: Point; b: Point }[] = []
-  for (const ring of ringsOf(geometry)) {
-    for (let i = 0; i < ring.length - 1; i++) {
-      const key = edgeKey(ring[i], ring[i + 1])
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-      segs.push({ key, a: PROJ.project(ring[i][0], ring[i][1]), b: PROJ.project(ring[i + 1][0], ring[i + 1][1]) })
-    }
-  }
-  const solid: string[] = []
-  const dashed: string[] = []
-  for (const { key, a, b } of segs) {
-    ;((counts.get(key) ?? 0) > 1 ? dashed : solid).push(segPath(a, b))
-  }
-  return { solid, dashed }
-}
-
-// 폴리곤과 동일하게 모듈 로드시 1회만 계산해 캐싱(렌더마다 재계산 금지).
-const EDGE_OVERLAY: { solidD: string; dashedD: string } = (() => {
-  const geoms: Geometry[] = [
-    ...map.regions.map((r) => r.geometry),
-    ...map.hidden_areas
-      .filter((h): h is RawHidden & { real_geometry: Geometry } => h.real_geometry != null)
-      .map((h) => h.real_geometry),
-  ]
-  const solid: string[] = []
-  const dashed: string[] = []
-  for (const g of geoms) {
-    const c = classifyEdges(g)
-    solid.push(...c.solid)
-    dashed.push(...c.dashed)
-  }
-  return { solidD: solid.join(''), dashedD: dashed.join('') }
-})()
-
-// non-scaling-stroke로 viewBox 줌과 무관한 화면 픽셀 두께 고정 — 기존 view.stroke(viewBox 비례)는
-// ZOOM=0.28에서 서브픽셀에 가까워 얇은 접합선이 사라지던 원인이라 경계선에는 더 이상 쓰지 않는다.
-const BOUNDARY_STROKE_PX = 1.2
-const INNER_DASH = '4 3'
 
 // ZOOM = viewBox가 차지하는 전체 지도 대비 비율 — 작을수록 화면에 더 크게(세부적으로) 보임(확대).
 // plan.md #1: 시각 배율만 확장, city_connections 인접 관계는 그대로.
@@ -162,9 +108,9 @@ const CITY_SHAPES: { name: string; color: string; d: string; label: Point; area:
 // 뷰(줌·투영)는 플레이어 위치와 무관하게 고정이라 시군구 레이어는 완전 정적 → 모듈 로드시 한 번만
 // 엘리먼트를 만들고 memo로 재렌더를 막아, 이동 글라이드(매 프레임 viewBox만 이동) 때 노드가
 // 매 프레임 재생성되는 것을 피한다. (viewBox만 바뀌고 path/라벨 좌표·폰트는 그대로다.)
-const VW = PROJ.width * ZOOM
+const VW = PROJ.width * DEFAULT_ZOOM
 const CITY_STROKE = VW * 0.0026
-const LABEL_FONT = PROJ.height * ZOOM * 0.019
+const LABEL_FONT = PROJ.height * DEFAULT_ZOOM * 0.019
 // 라벨 밀집 완화(3차 검증): 면적 큰 시군구 우선으로, 이미 배치된 라벨과 최소거리(LABEL_MIN_DIST)
 // 미만이면 생략. 서울처럼 좁은 곳에 뭉친 구는 대표 3~5개만 남고, 지방은 전부 표시된다.
 const LABEL_MIN_DIST = VW * 0.095
@@ -226,6 +172,9 @@ export default function RegionMap({
   legendarySite,
   moving = false,
   tier,
+  zoom,
+  labels,
+  provinceId,
   onArrowClick,
   onLabelClick,
 }: RegionMapProps) {

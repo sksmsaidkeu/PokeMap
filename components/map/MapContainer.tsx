@@ -31,6 +31,8 @@ export type MapContainerProps = {
   zones?: Zone[]
   legendarySite: LatLng | null
   tier: UserTier // 플레이어 마커 볼 스프라이트 결정
+  labels?: CityLabel[] // 마커 근처에 띄우는 클릭 가능한 시 이름(플레이어 자신 + 이웃)
+  provinceId?: number // 지도 레터박스 배경색 결정용
   // motion 훅: 이동 성공 시 응답을 넘겨 마커 애니메이션/전환을 구동(미제공 시 기본 네비게이션).
   onMoveResult?: (result: MoveCitySuccess) => void
 }
@@ -41,6 +43,8 @@ export function MapContainer({
   zones = [],
   legendarySite,
   tier,
+  labels,
+  provinceId,
   onMoveResult,
 }: MapContainerProps) {
   const router = useRouter()
@@ -148,6 +152,9 @@ export function MapContainer({
         legendarySite={legendarySite}
         moving={locked}
         tier={tier}
+        zoom={zoom}
+        labels={labels}
+        provinceId={provinceId}
         onArrowClick={handleArrowClick}
         onLabelClick={handleLabelClick}
       />
