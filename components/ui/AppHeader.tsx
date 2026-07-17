@@ -4,20 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from './Modal'
-import type { UserTier } from './tier'
+import { TIER_ORDER, TIERS, type UserTier } from '@/lib/game/tier'
 
 export type { UserTier }
-
-// 스프라이트 에셋 확보 전까지 볼 고유색 원형으로 대체 — 에셋 도착 시 badgeClass 자리를 <Image>로 교체.
-// 표시 전용 배지: 볼 종류 선택 UI 아님(PRD §17, CLAUDE.md §22)
-// pct는 calc_user_tier(DB.md §6.5)의 등급 임계값과 동일 — 바뀌면 두 곳 다 갱신 필요.
-const TIER_ORDER: UserTier[] = ['monster', 'super', 'hyper', 'master']
-const TIERS: Record<UserTier, { label: string; badgeClass: string; pct: number }> = {
-  monster: { label: '몬스터볼', badgeClass: 'bg-red-500', pct: 0 },
-  super: { label: '슈퍼볼', badgeClass: 'bg-blue-600', pct: 0.3 },
-  hyper: { label: '하이퍼볼', badgeClass: 'bg-yellow-400', pct: 0.6 },
-  master: { label: '마스터볼', badgeClass: 'bg-purple-600', pct: 0.9 },
-}
 
 export type AppHeaderProps = {
   trainerName: string
