@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { MapContainer, type LatLng, type Neighbor } from '@/components/map/MapContainer'
+import { MapContainer, type LatLng, type Neighbor, type CityLabel } from '@/components/map/MapContainer'
 import { AppHeader, type UserTier } from '@/components/ui/AppHeader'
 
 // calc_user_tier는 표시용 한글 라벨을 반환(DB.md §6.5) — 배지 키로 역매핑
@@ -76,7 +76,7 @@ export default async function MapPage() {
     await Promise.all([
       supabase
         .from('cities')
-        .select('centroid, living_areas!inner(province_id)')
+        .select('name, centroid, living_areas!inner(province_id)')
         .eq('id', currentCityId)
         .single(),
       supabase.from('v_city_neighbors').select('neighbor_id').eq('city_id', currentCityId),
@@ -99,7 +99,7 @@ export default async function MapPage() {
     ? await supabase
         .from('cities')
         .select(
-          'id, centroid, living_areas!inner(province_id, is_endgame_area, provinces!inner(is_island_endgame))',
+          'id, name, centroid, living_areas!inner(province_id, is_endgame_area, provinces!inner(is_island_endgame))',
         )
         .in('id', neighborIds)
     : { data: [] }
@@ -118,6 +118,15 @@ export default async function MapPage() {
         !endgameUnlocked,
     })),
   )
+
+  // 라벨: 화면에 실제 표시되는 플레이어 시 + 화살표로 뜬 인접 시(최대 4개) — 개수 작아 밀도 제어 불필요
+  const assignedNeighborIds = new Set(neighbors.map((n) => n.cityId))
+  const labels: CityLabel[] = [
+    { cityId: currentCityId, name: currentCity.name, ...playerCentroid },
+    ...(neighborCities ?? [])
+      .filter((c) => assignedNeighborIds.has(c.id))
+      .map((c) => ({ cityId: c.id, name: c.name, ...parsePoint(c.centroid) })),
+  ]
 
   // 전설 출현지: 현재 도 진행률 100%일 때만, 그 도의 is_legendary_site 시 노출(§15)
   const [{ data: provProgress }, { data: legendaryCity }, { data: tierLabel }] = await Promise.all([
@@ -151,6 +160,8 @@ export default async function MapPage() {
         playerCentroid={playerCentroid}
         neighbors={neighbors}
         legendarySite={legendarySite}
+        labels={labels}
+        provinceId={currentProvinceId}
       />
     </main>
   )

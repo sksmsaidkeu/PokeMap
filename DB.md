@@ -309,6 +309,7 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 | 함수 | 트리거 | 역할 |
 |---|---|---|
 | `bootstrap-location` | 회원가입 직후(닉네임+GPS 좌표 또는 수동 선택 시 전달) | 닉네임 검증 → 시작 시 확정(수동 선택 > GPS 최근접 > 서울 폴백) → `profiles`+`user_progress` 생성 |
+| `rename-trainer` | AppHeader 닉네임 변경 모달에서 저장 | 닉네임 길이 검증(2~20자) → 요청자 `user_id`와 `profiles.id` 일치 확인 후 본인 row만 UPDATE → UNIQUE 위반 시 `NICKNAME_TAKEN` |
 | `move-city` | Map에서 인접 시 이동 | 인접성 검증(육지 도는 해금 검증 없음, 최종 히든 지역 — `is_island_endgame=true` 도 또는 `is_endgame_area=true` 생활권 — 은 `check_endgame_unlock` 미충족 시 거부) → 목적지가 `is_legendary_site`이고 해당 도 100% 완료면 전설 세션 확정 생성 → 아니면 `calc_spawn_rate` 판정 → `encounter_sessions` 생성 여부 결정 → `user_progress` 갱신 → `check_endgame_unlock` 평가(§10 6단계) |
 | `catch-attempt` | Catch&Encounter 탭에서 던지기(회차별) | 세션 유효성 검증 → `attempt_no` 순번 검증 → 일반은 `calc_catch_rate`, 전설은 `calc_legendary_catch_rate(fail_visits)` 판정 → `catch_attempts` 삽입 |
 | `unlock-check` | 폐기(독립 EF 없음) | `fn_move_city` 6단계 + `fn_catch_attempt` 포획 성공 경로에서 `check_endgame_unlock` 평가로 대체 — 섬 지역만 재평가(육지 도는 재평가 대상 아님) |
@@ -408,3 +409,14 @@ Catch & Encounter 탭의 "포획 가능성" 태그(`DESIGN.md` §2.2)는 원시 
 - `legendary_cooldowns.next_available_at`에만 존재하는 컬럼 — 전설 포획 3회 실패 후 재도전까지의 1시간 잠금을 표현한다(`PokeMap_MainSystem.md` §5).
 - 일반 포켓몬 인카운터에는 이동 쿨다운이 없다 — 이동할 때마다 매번 새로 스폰 판정을 시도한다(원본 문서에 일반 이동 쿨다운 규정 없음).
 - 만료 여부는 조회 시점에 `now()`와 비교, `session-sweep`은 저장공간 정리용일 뿐 로직에 필수는 아니다.
+
+## 18. 지역 클릭 시 포획/미포획 목록 (`v_region_pokedex_status`)
+
+지도에서 시/군을 클릭했을 때 그 지역 스폰 풀의 포획/미포획 목록을 보여주기 위한 읽기 전용 인터페이스(마이그레이션 `20260725000000`). 목록 UI 자체는 도감 팀 소유(§3) — 여기서는 데이터 인터페이스만 정의한다.
+
+- **형태**: `region_spawn_pool`(전체공개 `select_all`)과 `user_pokedex`(`select_own`)를 조인하는 뷰. RPC 함수가 아니라 뷰인 이유(YAGNI): 파라미터가 `city_id` 단일 등치 필터뿐이라 PostgREST의 `.eq('city_id', ...)`로 충분 — plpgsql 함수를 새로 만들 이유가 없다.
+- **파라미터**: 없음(뷰 컬럼). 조회 시 `city_id`로 등치 필터링해 사용(맵의 `onLabelClick(cityId)`가 그대로 키가 됨 — `living_area_id`로 한 단계 더 조회하는 왕복 없이 1쿼리로 끝남, §21 N+1 금지).
+- **반환 컬럼**: `city_id`(필터 키), `living_area_id`, `dex_no`, `category`(`공통`/`고유`), `is_legendary`, `caught boolean`(해당 유저의 `user_pokedex` 존재 여부), `catch_count`(미포획 시 0).
+- **RLS 방식 — SECURITY INVOKER 필수, DEFINER 절대 금지**: PostgreSQL 15+에서 뷰는 기본적으로 **소유자(postgres) 권한**으로 실행된다 — `WITH (security_invoker = true)`를 명시하지 않으면 조회자가 누구든 뷰 내부의 `user_pokedex` 접근이 소유자 권한으로 이뤄져 `select_own` RLS가 무시되고(=SECURITY DEFINER와 동일한 효과) **타 유저의 포획 기록이 그대로 노출**된다. 반드시 `security_invoker = true`로 생성해 조회자의 `auth.uid()` 컨텍스트에서 `user_pokedex` RLS가 재적용되게 한다. `LEFT JOIN user_pokedex up ON up.dex_no = rsp.dex_no AND up.user_id = auth.uid()`로 조인 조건에도 명시적으로 `auth.uid()`를 걸어 RLS가 우연히도 어긋나는 상황에 이중 방어한다.
+- 기존 `v_user_province_progress`/`v_user_tier`(§7)는 `security_invoker` 없이 생성되어 있어 이 규칙을 따르지 않는다 — 이번 신규 뷰에서 우연히 답습하지 않도록 별도 명시. 두 기존 뷰의 소급 수정은 이번 스코프 밖(호출부가 항상 `p_user_id`로 필터링하는 `SECURITY DEFINER` 함수 내부에서만 쓰여 현재는 직접 노출 경로가 없음 — 별도 검토 필요 시 팀 협의).
+- 클라이언트 wrapper: `lib/game/regionSpawnStatus.ts`의 `getRegionSpawnStatus(cityId)` — `anon` key로 뷰를 직접 SELECT(Edge Function 아님, 확률/쓰기 없는 순수 조회라 EF 불필요).

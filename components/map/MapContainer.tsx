@@ -3,6 +3,7 @@
 import { useCallback, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AnimatedRegionMap from './AnimatedRegionMap'
+import { DEFAULT_ZOOM, type CityLabel } from './RegionMap'
 import { moveCity, type MoveCitySuccess, type MoveCityError } from '@/lib/game/moveCity'
 
 export type LatLng = { lon: number; lat: number }
@@ -12,10 +13,14 @@ export type Neighbor = {
   locked: boolean
 }
 
+export type { CityLabel }
+
 export type MapContainerProps = {
   playerCentroid: LatLng
   neighbors: Neighbor[]
   legendarySite: LatLng | null
+  labels?: CityLabel[]
+  provinceId?: number // 지역별 배경색(plan.md #8) — RegionMap에 그대로 전달
   // motion 훅: 이동 성공 시 응답을 넘겨 마커 애니메이션/전환을 구동(미제공 시 기본 네비게이션).
   onMoveResult?: (result: MoveCitySuccess) => void
 }
@@ -24,13 +29,23 @@ export function MapContainer({
   playerCentroid,
   neighbors,
   legendarySite,
+  labels,
+  provinceId,
   onMoveResult,
 }: MapContainerProps) {
   const router = useRouter()
+  // 줌 조작 UI는 이번 스코프에 없음 — 값을 보유만 해두고 향후 버튼/휠 연결 시 setZoom만 노출하면 됨(plan.md #1)
+  const [zoom] = useState(DEFAULT_ZOOM)
   const [moving, setMoving] = useState(false)
   const [refreshing, startRefresh] = useTransition()
   const [error, setError] = useState<MoveCityError | null>(null)
   const locked = moving || refreshing
+
+  // 정보 보기 목록 UI는 이번 스코프 밖(도감 도메인 아님, 별도 후속 작업) — 인터페이스만 연결
+  // 도감 팀이 목록 UI를 붙일 자리 — pokedex 도메인은 이 팀 담당 밖(CLAUDE.md §3)이라 콘솔 로그로만 훅 지점을 남긴다
+  const handleLabelClick = useCallback((cityId: number) => {
+    console.log('[map] label clicked', cityId)
+  }, [])
 
   const handleArrowClick = useCallback(
     async (_dir: Neighbor['dir'], cityId: number) => {
@@ -74,7 +89,11 @@ export function MapContainer({
         neighbors={neighbors}
         legendarySite={legendarySite}
         moving={locked}
+        zoom={zoom}
+        labels={labels}
+        provinceId={provinceId}
         onArrowClick={handleArrowClick}
+        onLabelClick={handleLabelClick}
       />
       {error && (
         <p role="alert" className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-red-600 px-3 py-1 text-sm text-white">
