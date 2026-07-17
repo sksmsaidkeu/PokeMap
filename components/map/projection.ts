@@ -31,12 +31,15 @@ export function createProjection(bounds: Bounds, width = 1000): Projection {
   return { project, width, height }
 }
 
-// GeoJSON geometry → SVG path d. Polygon은 링 배열(멀티파트 조각), MultiPolygon은 폴리곤 배열.
+// Polygon은 링 배열(멀티파트 조각), MultiPolygon은 폴리곤 배열 → 한 겹 평탄화해 링 배열로 통일.
+export function ringsOf(geometry: Geometry): number[][][] {
+  return geometry.type === 'MultiPolygon' ? geometry.coordinates.flat() : geometry.coordinates
+}
+
+// GeoJSON geometry → SVG path d.
 // evenodd fill-rule과 함께 쓰면 분리된 섬 조각과 실제 구멍 둘 다 올바르게 채워진다.
 export function geoPath(geometry: Geometry, project: (lon: number, lat: number) => Point): string {
-  const rings: number[][][] =
-    geometry.type === 'MultiPolygon' ? geometry.coordinates.flat() : geometry.coordinates
-  return rings.map((ring) => ringToSubpath(ring, project)).join(' ')
+  return ringsOf(geometry).map((ring) => ringToSubpath(ring, project)).join(' ')
 }
 
 // 라벨 배치용 대표점: 지오메트리에서 면적이 가장 큰 링(본토 조각)의 면적가중 중심을 투영좌표로

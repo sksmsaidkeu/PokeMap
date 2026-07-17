@@ -14,10 +14,18 @@ import {
   type Geometry,
   type Point,
 } from './projection'
+import { regionBackground } from './provinceColors'
 
 type LonLat = { lon: number; lat: number }
 type Dir = 'up' | 'down' | 'left' | 'right'
 type NeighborArrow = { dir: Dir; cityId: number; locked: boolean } // locked=섬 미해금
+
+export interface CityLabel {
+  cityId: number
+  name: string
+  lon: number
+  lat: number
+}
 
 export interface RegionMapProps {
   playerCentroid: LonLat
@@ -26,6 +34,7 @@ export interface RegionMapProps {
   moving?: boolean // 서버 이동 응답 대기 중 — 화살표 dim + 입력 차단(§2 낙관적 업데이트 금지)
   tier: UserTier // 플레이어 등급 — 마커를 해당 등급 볼 스프라이트로 표시
   onArrowClick: (dir: Dir, cityId: number) => void
+  onLabelClick?: (cityId: number) => void // "이동"(화살표)과 구분되는 "정보 보기" — 실제 동작은 이 스코프 밖
 }
 
 // 독도 등 symbolic 항목은 real_geometry 없이 real_point만 갖는다(원본 데이터 주석 참고)
@@ -40,7 +49,98 @@ const SYMBOLIC_DOTS: { color: string; p: Point }[] = map.hidden_areas
   .filter((h) => h.real_geometry == null && h.real_point != null)
   .map((h) => ({ color: h.color, p: PROJ.project(h.real_point![0], h.real_point![1]) }))
 
-const ZOOM = 0.28 // 플레이어+인접 시가 보이는 수준(PRD §8.2)
+// min.json은 생활권(색) 단위로 병합된 폴리곤이라 시/군/구 경계가 별도 필드로 없다 —
+// 대신 원본 GeoJSON에는 병합 전 개별 시/군/구 링이 그대로 남아있어(dissolve 안 됨),
+// 한 생활권 안에서 두 번 등장하는 변(edge)이 곧 인접 시/군/구가 맞닿는 접합선이다.
+// plan.md #7: 그 접합선만 점선으로, 다른 색과 맞닿는 진짜 외곽선/해안선은 실선 유지.
+const EDGE_PRECISION = 5 // 원본 좌표에 1e-6~1e-7도 수준 부동소수 노이즈가 있어(~1m 허용) 반올림 후 비교해야 매칭됨
+
+function edgeKey(a: number[], b: number[]): string {
+  const ka = `${a[0].toFixed(EDGE_PRECISION)},${a[1].toFixed(EDGE_PRECISION)}`
+  const kb = `${b[0].toFixed(EDGE_PRECISION)},${b[1].toFixed(EDGE_PRECISION)}`
+  return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+}
+
+function segPath(a: Point, b: Point): string {
+  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)}L${b.x.toFixed(1)} ${b.y.toFixed(1)}`
+}
+
+function classifyEdges(geometry: Geometry): { solid: string[]; dashed: string[] } {
+  const counts = new Map<string, number>()
+  const segs: { key: string; a: Point; b: Point }[] = []
+  for (const ring of ringsOf(geometry)) {
+    for (let i = 0; i < ring.length - 1; i++) {
+      const key = edgeKey(ring[i], ring[i + 1])
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+      segs.push({ key, a: PROJ.project(ring[i][0], ring[i][1]), b: PROJ.project(ring[i + 1][0], ring[i + 1][1]) })
+    }
+  }
+  const solid: string[] = []
+  const dashed: string[] = []
+  for (const { key, a, b } of segs) {
+    ;((counts.get(key) ?? 0) > 1 ? dashed : solid).push(segPath(a, b))
+  }
+  return { solid, dashed }
+}
+
+// 폴리곤과 동일하게 모듈 로드시 1회만 계산해 캐싱(렌더마다 재계산 금지).
+const EDGE_OVERLAY: { solidD: string; dashedD: string } = (() => {
+  const geoms: Geometry[] = [
+    ...map.regions.map((r) => r.geometry),
+    ...map.hidden_areas
+      .filter((h): h is RawHidden & { real_geometry: Geometry } => h.real_geometry != null)
+      .map((h) => h.real_geometry),
+  ]
+  const solid: string[] = []
+  const dashed: string[] = []
+  for (const g of geoms) {
+    const c = classifyEdges(g)
+    solid.push(...c.solid)
+    dashed.push(...c.dashed)
+  }
+  return { solidD: solid.join(''), dashedD: dashed.join('') }
+})()
+
+// non-scaling-stroke로 viewBox 줌과 무관한 화면 픽셀 두께 고정 — 기존 view.stroke(viewBox 비례)는
+// ZOOM=0.28에서 서브픽셀에 가까워 얇은 접합선이 사라지던 원인이라 경계선에는 더 이상 쓰지 않는다.
+const BOUNDARY_STROKE_PX = 1.2
+const INNER_DASH = '4 3'
+
+// ZOOM = viewBox가 차지하는 전체 지도 대비 비율 — 작을수록 화면에 더 크게(세부적으로) 보임(확대).
+// plan.md #1: 시각 배율만 확장, city_connections 인접 관계는 그대로.
+export const MIN_ZOOM = 0.14 // 과확대 시 이웃 시가 viewBox 밖으로 잘리는 하한
+export const MAX_ZOOM = 0.28 // 기존 기본값 — 이보다 축소하면 §8.2 "플레이어+인접 시" 범위를 벗어남
+export const DEFAULT_ZOOM = 0.2 // 기존 0.28보다 확대된 기본값(1.4배)
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z))
+
+// 좁은 화면(plan.md #2): 화살표 시각 크기만 축소, 히트 영역은 baseline 유지
+const NARROW_QUERY = '(max-width: 639px)'
+const SHORT_QUERY = '(max-height: 559px)' // ponytail: 컨테이너 실측 대신 뷰포트 높이로 근사(지도는 전체화면 사용 전제)
+const COMPACT_SIZE_SCALE = 0.65
+const COMPACT_GAP_SCALE = 0.8
+
+function useCompactArrows(): boolean {
+  const [compact, setCompact] = useState(() =>
+    typeof window === 'undefined'
+      ? false
+      : window.matchMedia(NARROW_QUERY).matches || window.matchMedia(SHORT_QUERY).matches
+  )
+
+  useEffect(() => {
+    const mqWidth = window.matchMedia(NARROW_QUERY)
+    const mqHeight = window.matchMedia(SHORT_QUERY)
+    const update = () => setCompact(mqWidth.matches || mqHeight.matches)
+    update()
+    mqWidth.addEventListener('change', update)
+    mqHeight.addEventListener('change', update)
+    return () => {
+      mqWidth.removeEventListener('change', update)
+      mqHeight.removeEventListener('change', update)
+    }
+  }, [])
+
+  return compact
+}
 
 // 시군구 채우기 + 경계 + 이름 라벨(southkorea-maps kostat 2013, EPSG:4326). 채우기 색은 도별 대표색
 // (전처리 단계에서 각 시군구에 소속 도 색을 구워넣음) → 채우기·경계가 같은 데이터셋이라 완벽히 정렬되고
@@ -127,19 +227,25 @@ export default function RegionMap({
   moving = false,
   tier,
   onArrowClick,
+  onLabelClick,
 }: RegionMapProps) {
+  const compact = useCompactArrows()
+
   const view = useMemo(() => {
+    const z = clampZoom(zoom)
     const c = PROJ.project(playerCentroid.lon, playerCentroid.lat)
-    const vw = PROJ.width * ZOOM
-    const vh = PROJ.height * ZOOM
+    const vw = PROJ.width * z
+    const vh = PROJ.height * z
+    const baseSize = vh * 0.05
     return {
       c,
       viewBox: `${c.x - vw / 2} ${c.y - vh / 2} ${vw} ${vh}`,
-      gap: vh * 0.11, // 마커에서 화살표까지 거리(4차 검증: 더 촘촘하게)
-      size: vh * 0.035, // 화살표 크기(4차 검증: 더 작게)
+      gap: vh * 0.11 * (compact ? COMPACT_GAP_SCALE : 1), // 마커에서 화살표까지 거리(4차 검증: 더 촘촘하게)
+      size: vh * 0.035 * (compact ? COMPACT_SIZE_SCALE : 1), // 화살표 크기(4차 검증: 더 작게)
+      hitR: baseSize * 1.8, // 클릭 히트 영역 — 44px 접근성 기준 유지 위해 compact에도 축소 안 함
       markerR: vh * 0.022,
     }
-  }, [playerCentroid])
+  }, [playerCentroid, compact, zoom])
 
   const legendary: Point | null = legendarySite
     ? PROJ.project(legendarySite.lon, legendarySite.lat)
@@ -149,7 +255,7 @@ export default function RegionMap({
     <svg
       viewBox={view.viewBox}
       preserveAspectRatio="xMidYMid meet"
-      style={{ width: '100%', height: '100%', display: 'block', background: '#eaf1f5' }}
+      style={{ width: '100%', height: '100%', display: 'block', background: regionBackground(provinceId) }}
       // role="img"은 자식을 presentational로 만들어 화살표 role="button"이 SR에서 사라진다 → group
       role="group"
       aria-label="지역 지도"
@@ -179,12 +285,87 @@ export default function RegionMap({
           dir={n.dir}
           center={arrowCenter(view.c, n.dir, view.gap)}
           size={view.size}
+          hitR={view.hitR}
           locked={n.locked}
           moving={moving}
           onClick={n.locked || moving ? undefined : () => onArrowClick(n.dir, n.cityId)}
         />
       ))}
+
+      {labels?.map((l) => {
+        const p = PROJ.project(l.lon, l.lat)
+        // 플레이어 자신의 시는 project 결과가 마커(view.c)와 겹친다 — 4방향 화살표 히트 영역과
+        // 안 겹치도록 대각선(우상단)으로 띄운다. 이웃 시는 실좌표가 화살표(gap 거리)보다
+        // 대체로 멀리 떨어져 있어 추가 회피 로직 없이 점 바로 위에 표시.
+        const isSelf = Math.hypot(p.x - view.c.x, p.y - view.c.y) < view.markerR * 1.5
+        const label = isSelf
+          ? { x: p.x + view.markerR * 2, y: p.y - view.markerR * 2 }
+          : { x: p.x, y: p.y - view.markerR * 1.2 }
+        return (
+          <Label
+            key={l.cityId}
+            x={label.x}
+            y={label.y}
+            fontSize={view.markerR * 1.4}
+            name={l.name}
+            onClick={onLabelClick ? () => onLabelClick(l.cityId) : undefined}
+          />
+        )
+      })}
     </svg>
+  )
+}
+
+// 이름 길이에 구조적 상한 없이 렌더하면 향후 더 긴 라벨/좁은 뷰포트(plan.md 360px 최소폭)에서
+// 옆 화살표·폴리곤 경계와 겹칠 수 있다 — 현재 최장 이름(8자, 예: "인천 서부·강화")은 안 건드리고
+// 그보다 긴 이름만 textLength로 폭을 압축(clamp)하는 안전망.
+const MAX_LABEL_CHARS = 10
+
+function Label({
+  x,
+  y,
+  fontSize,
+  name,
+  onClick,
+}: {
+  x: number
+  y: number
+  fontSize: number
+  name: string
+  onClick?: () => void
+}) {
+  // ponytail: 0.6은 한글 글자폭 근사치(실측 대신 고정 계수) — 실제 폰트 기준 재보정 필요해지면 조정
+  const clampWidth = name.length > MAX_LABEL_CHARS ? fontSize * MAX_LABEL_CHARS * 0.6 : undefined
+  return (
+    <text
+      x={x}
+      y={y}
+      fontSize={fontSize}
+      textAnchor="middle"
+      fill="#111827"
+      stroke="#ffffff"
+      strokeWidth={fontSize * 0.15}
+      paintOrder="stroke"
+      textLength={clampWidth}
+      lengthAdjust={clampWidth ? 'spacingAndGlyphs' : undefined}
+      style={{ userSelect: 'none', cursor: onClick ? 'pointer' : undefined }}
+      role={onClick ? 'button' : undefined}
+      aria-label={onClick ? `${name} 정보 보기` : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onClick()
+              }
+            }
+          : undefined
+      }
+    >
+      {name}
+    </text>
   )
 }
 
@@ -213,6 +394,7 @@ function Arrow({
   dir,
   center,
   size,
+  hitR,
   locked,
   moving,
   onClick,
@@ -220,6 +402,7 @@ function Arrow({
   dir: Dir
   center: Point
   size: number
+  hitR: number
   locked: boolean
   moving: boolean
   onClick?: () => void
@@ -249,8 +432,8 @@ function Arrow({
       style={{ cursor: locked ? 'not-allowed' : moving ? 'wait' : 'pointer' }}
       opacity={moving ? 0.4 : 1}
     >
-      {/* 히트 영역 확대 */}
-      <circle cx={center.x} cy={center.y} r={size * 1.8} fill="transparent" />
+      {/* 히트 영역 확대 — compact에서도 축소하지 않음(접근성 44px 기준) */}
+      <circle cx={center.x} cy={center.y} r={hitR} fill="transparent" />
       {focusRing && (
         <circle
           cx={center.x}

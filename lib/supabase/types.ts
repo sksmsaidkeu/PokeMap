@@ -123,11 +123,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "city_connections_city_a_id_fkey"
+            columns: ["city_a_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
+          },
+          {
             foreignKeyName: "city_connections_city_b_id_fkey"
             columns: ["city_b_id"]
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "city_connections_city_b_id_fkey"
+            columns: ["city_b_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
         ]
       }
@@ -175,6 +189,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encounter_sessions_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
           {
             foreignKeyName: "encounter_sessions_dex_no_fkey"
@@ -382,6 +403,8 @@ export type Database = {
         Row: {
           bst: number
           dex_no: number
+          evo_chain_id: number | null
+          evo_stage: number | null
           flavor_text: string | null
           height_dm: number | null
           name_en: string
@@ -394,6 +417,8 @@ export type Database = {
         Insert: {
           bst: number
           dex_no: number
+          evo_chain_id?: number | null
+          evo_stage?: number | null
           flavor_text?: string | null
           height_dm?: number | null
           name_en: string
@@ -406,6 +431,8 @@ export type Database = {
         Update: {
           bst?: number
           dex_no?: number
+          evo_chain_id?: number | null
+          evo_stage?: number | null
           flavor_text?: string | null
           height_dm?: number | null
           name_en?: string
@@ -551,6 +578,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "user_pokedex_first_caught_city_id_fkey"
+            columns: ["first_caught_city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
+          },
+          {
             foreignKeyName: "user_pokedex_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -596,6 +630,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_progress_current_city_id_fkey"
+            columns: ["current_city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
           {
             foreignKeyName: "user_progress_user_id_fkey"
@@ -683,6 +724,33 @@ export type Database = {
         }
         Relationships: []
       }
+      v_region_pokedex_status: {
+        Row: {
+          catch_count: number | null
+          category: string | null
+          caught: boolean | null
+          city_id: number | null
+          dex_no: number | null
+          is_legendary: boolean | null
+          living_area_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "region_spawn_pool_dex_no_fkey"
+            columns: ["dex_no"]
+            isOneToOne: false
+            referencedRelation: "pokemon_species"
+            referencedColumns: ["dex_no"]
+          },
+          {
+            foreignKeyName: "region_spawn_pool_living_area_id_fkey"
+            columns: ["living_area_id"]
+            isOneToOne: false
+            referencedRelation: "living_areas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_user_province_progress: {
         Row: {
           caught_count: number | null
@@ -727,7 +795,7 @@ export type Database = {
       calc_catch_rate: { Args: { bst: number }; Returns: number }
       calc_catch_rate_tier: { Args: { rate: number }; Returns: string }
       calc_legendary_catch_rate: {
-        Args: { fail_visits: number }
+        Args: { fail_visits: number; p_province_id: number; p_user_id: string }
         Returns: number
       }
       calc_session_catch_tier: {

@@ -11,6 +11,15 @@ function dexLabel(dexNo: number): string {
   return `No.${String(dexNo).padStart(4, "0")}`;
 }
 
+// 누적 포획 횟수에 따른 카드 프레임 색(50+ 금 / 30+ 은 / 10+ 동). 미만이면 기본 검정.
+// 임계값은 도감 표시 전용 연출값(밸런스 상수 아님).
+function catchFrame(count: number): { color: string; label: string } | null {
+  if (count >= 50) return { color: "#f5b301", label: "골드" };
+  if (count >= 30) return { color: "#9aa3ad", label: "실버" };
+  if (count >= 10) return { color: "#c67c3e", label: "브론즈" };
+  return null;
+}
+
 export function PokemonCard({ card, onSelect }: PokemonCardProps) {
   const { entry, species } = card;
 
@@ -33,11 +42,15 @@ export function PokemonCard({ card, onSelect }: PokemonCardProps) {
     );
   }
 
+  // 누적 포획 프레임 — 색상은 동적 hex라 인라인 스타일(Tailwind JIT가 못 잡음)
+  const frame = catchFrame(entry.catch_count);
+
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="flex flex-col rounded-xl border-2 border-black bg-white p-2 text-left transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000]"
+      className="flex flex-col rounded-xl border-[3px] border-black bg-white p-2 text-left transition hover:-translate-y-0.5 hover:shadow-[2px_2px_0_0_#000]"
+      style={frame ? { borderColor: frame.color, boxShadow: `2px 2px 0 0 ${frame.color}` } : undefined}
     >
       <div className="relative flex aspect-square w-full items-center justify-center rounded-lg bg-zinc-50">
         <PokemonSprite
@@ -48,6 +61,14 @@ export function PokemonCard({ card, onSelect }: PokemonCardProps) {
         {card.isLegendary && (
           <span className="absolute right-1 top-1 rounded bg-[#e3350d] px-1 text-[9px] font-bold text-white">
             전설
+          </span>
+        )}
+        {frame && (
+          <span
+            className="absolute left-1 top-1 rounded px-1 text-[9px] font-bold text-white"
+            style={{ backgroundColor: frame.color }}
+          >
+            {frame.label}
           </span>
         )}
         {entry.catch_count > 1 && (

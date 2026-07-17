@@ -24,6 +24,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [editNicknameOpen, setEditNicknameOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [tierInfoOpen, setTierInfoOpen] = useState(false)
 
@@ -111,6 +112,17 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
                 type="button"
                 onClick={() => {
                   setMenuOpen(false)
+                  setEditNicknameOpen(true)
+                }}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-black hover:bg-[#F0F0F0]"
+              >
+                닉네임 변경
+              </button>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
                   setConfirmOpen(true)
                 }}
                 className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-black hover:bg-[#F0F0F0]"
@@ -178,6 +190,12 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
           확인
         </button>
       </Modal>
+
+      <EditNicknameModal
+        open={editNicknameOpen}
+        onClose={() => setEditNicknameOpen(false)}
+        currentNickname={trainerName}
+      />
     </header>
   )
 }

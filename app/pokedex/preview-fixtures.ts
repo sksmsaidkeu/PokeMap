@@ -10,8 +10,9 @@ export function isPreviewLevel(v: string | undefined): v is PreviewLevel {
 
 const CAUGHT_AT = "2026-07-01T00:00:00.000Z"; // 고정 더미값(비결정성 방지)
 
+// 프리뷰에선 포획 횟수를 dex_no로 결정적으로 흩뿌려 프레임 등급(10/30/50+)이 모두 보이게 한다(QA 전용).
 function caughtEntry(dexNo: number): PokedexEntryRow {
-  return { dex_no: dexNo, first_caught_at: CAUGHT_AT, catch_count: 1 };
+  return { dex_no: dexNo, first_caught_at: CAUGHT_AT, catch_count: ((dexNo * 13) % 60) + 1 };
 }
 
 // full: 전설 포함 전량 포획 / half: 일반종 절반(짝수 인덱스) / newbie: 첫 도의 앞 2마리만

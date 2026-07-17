@@ -4,7 +4,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 export const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  // supabase-js는 모든 요청에 x-client-info를, invoke()는 apikey도 자동으로 붙인다 —
+  // 둘 다 빠지면 브라우저 preflight가 막혀 실제 요청(POST)이 아예 전송되지 않는다.
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
