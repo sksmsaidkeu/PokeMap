@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -7,11 +7,6 @@
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -128,11 +123,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "city_connections_city_a_id_fkey"
+            columns: ["city_a_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
+          },
+          {
             foreignKeyName: "city_connections_city_b_id_fkey"
             columns: ["city_b_id"]
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "city_connections_city_b_id_fkey"
+            columns: ["city_b_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
         ]
       }
@@ -180,6 +189,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encounter_sessions_city_id_fkey"
+            columns: ["city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
           {
             foreignKeyName: "encounter_sessions_dex_no_fkey"
@@ -326,6 +342,7 @@ export type Database = {
           is_endgame_area: boolean
           name: string
           province_id: number
+          region_id_override: number | null
         }
         Insert: {
           color: string
@@ -333,6 +350,7 @@ export type Database = {
           is_endgame_area?: boolean
           name: string
           province_id: number
+          region_id_override?: number | null
         }
         Update: {
           color?: string
@@ -340,6 +358,7 @@ export type Database = {
           is_endgame_area?: boolean
           name?: string
           province_id?: number
+          region_id_override?: number | null
         }
         Relationships: [
           {
@@ -355,6 +374,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_user_province_progress"
             referencedColumns: ["province_id"]
+          },
+          {
+            foreignKeyName: "living_areas_region_id_override_fkey"
+            columns: ["region_id_override"]
+            isOneToOne: false
+            referencedRelation: "pokemon_regions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -537,6 +563,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "user_pokedex_first_caught_city_id_fkey"
+            columns: ["first_caught_city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
+          },
+          {
             foreignKeyName: "user_pokedex_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -582,6 +615,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cities"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_progress_current_city_id_fkey"
+            columns: ["current_city_id"]
+            isOneToOne: false
+            referencedRelation: "v_region_pokedex_status"
+            referencedColumns: ["city_id"]
           },
           {
             foreignKeyName: "user_progress_user_id_fkey"
@@ -669,6 +709,33 @@ export type Database = {
         }
         Relationships: []
       }
+      v_region_pokedex_status: {
+        Row: {
+          catch_count: number | null
+          category: string | null
+          caught: boolean | null
+          city_id: number | null
+          dex_no: number | null
+          is_legendary: boolean | null
+          living_area_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "region_spawn_pool_dex_no_fkey"
+            columns: ["dex_no"]
+            isOneToOne: false
+            referencedRelation: "pokemon_species"
+            referencedColumns: ["dex_no"]
+          },
+          {
+            foreignKeyName: "region_spawn_pool_living_area_id_fkey"
+            columns: ["living_area_id"]
+            isOneToOne: false
+            referencedRelation: "living_areas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_user_province_progress: {
         Row: {
           caught_count: number | null
@@ -696,6 +763,20 @@ export type Database = {
       }
     }
     Functions: {
+      bootstrap_user: {
+        Args: {
+          p_city_id?: number
+          p_lat: number
+          p_lng: number
+          p_nickname: string
+          p_user_id: string
+        }
+        Returns: {
+          city_id: number
+          city_name: string
+          fallback: boolean
+        }[]
+      }
       calc_catch_rate: { Args: { bst: number }; Returns: number }
       calc_catch_rate_tier: { Args: { rate: number }; Returns: string }
       calc_legendary_catch_rate: {
@@ -710,7 +791,13 @@ export type Database = {
       calc_user_tier: { Args: { p_user_id: string }; Returns: string }
       check_endgame_unlock: { Args: { p_user_id: string }; Returns: boolean }
       fn_bootstrap_location: {
-        Args: { p_lat: number; p_lng: number; p_user_id: string }
+        Args: {
+          p_city_id?: number
+          p_lat: number
+          p_lng: number
+          p_nickname: string
+          p_user_id: string
+        }
         Returns: Json
       }
       fn_catch_attempt: {
@@ -857,3 +944,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
