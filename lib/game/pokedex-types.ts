@@ -2,7 +2,15 @@ import type { Database } from "@/lib/supabase/types";
 
 export type PokemonSpeciesRow = Pick<
   Database["public"]["Tables"]["pokemon_species"]["Row"],
-  "dex_no" | "name_kr" | "type1" | "type2" | "bst" | "flavor_text"
+  | "dex_no"
+  | "name_kr"
+  | "type1"
+  | "type2"
+  | "bst"
+  | "flavor_text"
+  | "height_dm"
+  | "weight_hg"
+  | "primary_ability"
 >;
 
 export type PokedexEntryRow = Pick<

@@ -404,28 +404,37 @@ export type Database = {
           bst: number
           dex_no: number
           flavor_text: string | null
+          height_dm: number | null
           name_en: string
           name_kr: string
+          primary_ability: string | null
           type1: string
           type2: string | null
+          weight_hg: number | null
         }
         Insert: {
           bst: number
           dex_no: number
           flavor_text?: string | null
+          height_dm?: number | null
           name_en: string
           name_kr: string
+          primary_ability?: string | null
           type1: string
           type2?: string | null
+          weight_hg?: number | null
         }
         Update: {
           bst?: number
           dex_no?: number
           flavor_text?: string | null
+          height_dm?: number | null
           name_en?: string
           name_kr?: string
+          primary_ability?: string | null
           type1?: string
           type2?: string | null
+          weight_hg?: number | null
         }
         Relationships: []
       }

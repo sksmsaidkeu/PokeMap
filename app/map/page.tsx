@@ -1,15 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { MapContainer, type LatLng, type Neighbor, type CityLabel } from '@/components/map/MapContainer'
-import { AppHeader, type UserTier } from '@/components/ui/AppHeader'
-
-// calc_user_tier는 표시용 한글 라벨을 반환(DB.md §6.5) — 배지 키로 역매핑
-const TIER_BY_LABEL: Record<string, UserTier> = {
-  몬스터볼: 'monster',
-  슈퍼볼: 'super',
-  하이퍼볼: 'hyper',
-  마스터볼: 'master',
-}
+import { AppHeader } from '@/components/ui/AppHeader'
+import { tierFromLabel } from '@/lib/game/tier'
 
 // PostgREST는 point를 "(lon,lat)" 문자열로 반환 → {lon,lat} 파싱
 // 실패 시 (0,0) 폴백이 바다를 조용히 렌더하는 것보다 즉시 실패가 낫다
@@ -153,11 +146,13 @@ export default async function MapPage() {
     complete && legendaryCity ? parsePoint(legendaryCity.centroid) : null
 
   return (
-    <main className="flex min-h-screen flex-col">
+    // h-screen(고정) — min-h-screen(하한선)이면 지도 SVG의 viewBox 종횡비가
+    // flex-1 자식의 min-h-0과 맞물려도 컨테이너 자체가 내용에 맞춰 늘어나 버린다.
+    <main className="flex h-screen flex-col">
       <AppHeader
         trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
         // rpc 실패 시 최저 등급 폴백 — 헤더가 페이지를 막을 이유는 없다
-        tier={TIER_BY_LABEL[tierLabel ?? ''] ?? 'monster'}
+        tier={tierFromLabel(tierLabel)}
         totalSpecies={totalSpecies ?? 0}
       />
       <MapContainer
