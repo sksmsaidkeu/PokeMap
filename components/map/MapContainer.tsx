@@ -4,6 +4,7 @@ import { useCallback, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AnimatedRegionMap from './AnimatedRegionMap'
 import { moveCity, type MoveCitySuccess, type MoveCityError } from '@/lib/game/moveCity'
+import type { UserTier } from '@/lib/game/tier'
 
 export type LatLng = { lon: number; lat: number }
 export type Neighbor = {
@@ -16,6 +17,7 @@ export type MapContainerProps = {
   playerCentroid: LatLng
   neighbors: Neighbor[]
   legendarySite: LatLng | null
+  tier: UserTier // 플레이어 마커 볼 스프라이트 결정
   // motion 훅: 이동 성공 시 응답을 넘겨 마커 애니메이션/전환을 구동(미제공 시 기본 네비게이션).
   onMoveResult?: (result: MoveCitySuccess) => void
 }
@@ -24,6 +26,7 @@ export function MapContainer({
   playerCentroid,
   neighbors,
   legendarySite,
+  tier,
   onMoveResult,
 }: MapContainerProps) {
   const router = useRouter()
@@ -76,6 +79,7 @@ export function MapContainer({
         neighbors={neighbors}
         legendarySite={legendarySite}
         moving={locked}
+        tier={tier}
         onArrowClick={handleArrowClick}
       />
       {error && (

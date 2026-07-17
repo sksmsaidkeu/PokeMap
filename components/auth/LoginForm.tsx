@@ -64,8 +64,10 @@ export default function LoginForm() {
   // 기본 미체크 → 인증 쿠키가 세션 쿠키가 되어 브라우저 종료 시 로그아웃. 체크 시에만 로그인 유지.
   const [remember, setRemember] = useState(false)
 
-  // signUp은 성공 시 즉시 세션을 반환한다(enable_confirmations=false). 계정이 이미 만들어진 뒤
-  // 위치 확정만 실패하면, 재시도 시 재가입 없이 bootstrap만 다시 호출한다.
+  // signUp은 성공 시 즉시 세션을 반환한다(enable_confirmations=false). 계정 생성은 위치가 확정된
+  // 시점(GPS 성공 또는 수동 선택 완료)에만 한다 — 위치 없이 먼저 만들면, GPS 실패 후 사용자가
+  // 이탈했을 때 profiles/user_progress 없는 고아 auth 계정이 남는다. 계정 생성 후 bootstrap만
+  // 실패하면(일시적 오류) 재시도 시 재가입 없이 bootstrap만 다시 호출하도록 이 플래그로 가드.
   const [accountCreated, setAccountCreated] = useState(false)
 
   // GPS 실패 시 수동 위치 선택(도→시). 잠긴 섬(§16)은 시작지 후보에서 제외한다.
@@ -158,6 +160,23 @@ export default function LoginForm() {
     else setFormError('시작 위치를 정하지 못했어요. 잠시 후 다시 시도해 주세요.')
   }
 
+  // 위치가 확정된 시점에만 호출: 계정을 (없으면) 만들고 bootstrap으로 시작 위치를 확정한다.
+  // 계정 생성을 여기까지 미뤄야 GPS 실패 후 이탈 시 고아 계정이 남지 않는다.
+  async function completeSignup(coords: { lat: number; lng: number } | null, chosenCityId: number | null) {
+    if (!accountCreated) {
+      // 가입엔 기억하기 옵션이 없다 — 기본(세션 쿠키)로 시작, 재방문 시 로그아웃.
+      rememberMe(false)
+      const { error } = await supabase.auth.signUp({ email: email.trim(), password })
+      if (error) {
+        setFormError(friendlyAuthError(error.code, error.message))
+        setLoading(false)
+        return
+      }
+      setAccountCreated(true)
+    }
+    applyOutcome(await invokeBootstrap(coords, chosenCityId))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (loading) return
@@ -190,21 +209,9 @@ export default function LoginForm() {
     }
 
     setLoading(true)
-    if (!accountCreated) {
-      // 가입엔 기억하기 옵션이 없다 — 기본(세션 쿠키)로 시작, 재방문 시 로그아웃.
-      rememberMe(false)
-      const { error } = await supabase.auth.signUp({ email: email.trim(), password })
-      if (error) {
-        setFormError(friendlyAuthError(error.code, error.message))
-        setLoading(false)
-        return
-      }
-      setAccountCreated(true)
-    }
-
     const coords = await getCoords()
     if (!coords) {
-      // GPS 불가 → 서울로 임의 폴백하지 않고 사용자가 직접 시작 지역을 고르게 한다.
+      // GPS 불가/실패 → 계정을 만들지 않고 수동 지역 선택으로 유도(이탈해도 고아 계정 없음).
       const ok = await loadProvinces()
       setShowManual(true)
       setLoading(false)
@@ -212,7 +219,7 @@ export default function LoginForm() {
       return
     }
 
-    applyOutcome(await invokeBootstrap(coords, null))
+    await completeSignup(coords, null)
   }
 
   async function handleManualConfirm() {
@@ -224,7 +231,7 @@ export default function LoginForm() {
       return
     }
     setLoading(true)
-    applyOutcome(await invokeBootstrap(null, Number(cityId)))
+    await completeSignup(null, Number(cityId))
   }
 
   const inputClass =
@@ -273,7 +280,6 @@ export default function LoginForm() {
             setEmail(e.target.value)
             if (accountCreated) setAccountCreated(false)
           }}
-          disabled={showManual}
           className={inputClass}
         />
       </div>
@@ -291,7 +297,6 @@ export default function LoginForm() {
           autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          disabled={showManual}
           className={inputClass}
         />
         {mode === 'signup' && !showManual && (
