@@ -13,6 +13,7 @@ export type CatchAttemptSuccess = {
 export type CatchAttemptErrorCode =
   | 'SESSION_NOT_FOUND'
   | 'SESSION_EXPIRED'
+  | 'SESSION_ALREADY_RESOLVED'
   | 'NO_ATTEMPTS_LEFT'
   | 'INVALID_INPUT'
 

@@ -214,8 +214,14 @@ export default function EncounterClient({
     setPending(false)
 
     if (error) {
-      // 만료/소진은 서버 판정이 곧 결과 — 클라이언트가 결과를 추정하지 않는다
-      if (error.code === 'SESSION_EXPIRED' || error.code === 'NO_ATTEMPTS_LEFT') {
+      // 만료/소진/세션소실은 서버 판정이 곧 결과 — 클라이언트가 결과를 추정하지 않는다
+      // SESSION_NOT_FOUND를 errorMessage로만 두면 phase가 active로 남아 포획 버튼이 죽은 세션에 계속 눌려버린다(B1)
+      if (
+        error.code === 'SESSION_EXPIRED' ||
+        error.code === 'NO_ATTEMPTS_LEFT' ||
+        error.code === 'SESSION_NOT_FOUND' ||
+        error.code === 'SESSION_ALREADY_RESOLVED'
+      ) {
         setPhase('fled')
       } else {
         setErrorMessage(error.message)
@@ -234,7 +240,8 @@ export default function EncounterClient({
         .eq('dex_no', dexNo)
         .maybeSingle()
       setCatchCount(row?.catch_count ?? null)
-    } else if (data.status === 'fled') {
+    } else if (data.status === 'fled' || data.attempts_left <= 0) {
+      // 서버가 status:'fled' 없이 pending+attempts_left:0만 주는 경우도 소진=도망으로 처리(B2) — 2분 타이머까지 안 갇히게
       setPhase('fled')
     } else {
       setMissed(true)

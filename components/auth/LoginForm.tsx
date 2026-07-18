@@ -212,6 +212,15 @@ export default function LoginForm() {
       setFormError('플레이어 이름은 2~20자로 입력해 주세요')
       return
     }
+    // GPS 권한 팝업(브라우저 OS 프롬프트)보다 먼저 확인해야 빈 값으로 팝업만 띄우고 signUp이 실패하는 걸 막는다.
+    if (!/\S+@\S+\.\S+/.test(email.trim())) {
+      setFormError('이메일 형식을 확인해 주세요')
+      return
+    }
+    if (password.length < 6) {
+      setFormError('비밀번호는 6자 이상이어야 해요.')
+      return
+    }
 
     setLoading(true)
     const coords = await getCoords()

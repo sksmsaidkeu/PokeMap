@@ -367,7 +367,7 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`
-2. `status='pending' AND expires_at > now()` 확인, `attempts_used < 3` 확인
+2. `status<>'pending'`이면 `SESSION_ALREADY_RESOLVED`(이미 caught/fled), `expires_at<=now()`면 `SESSION_EXPIRED` — 두 경우를 분리해 이미 확정된 세션 재시도를 "만료됨"으로 오도하지 않는다(E2E 리포트 B4). `attempts_used < 3` 확인
 3. 확률 판정(§6.2/6.3) → `catch_attempts` INSERT(`attempt_no = attempts_used + 1`), `encounter_sessions.attempts_used += 1`
 4. 트리거가 성공/3회 소진에 따라 `status` 확정
 5. 커밋
