@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useEffect, useMemo, useState } from 'react'
-import rawMap from '@/files/korea_map_data.min.json'
+import rawMap from '@/files/korea_map_meta.min.json'
 import rawMunis from '@/files/korea_municipalities.min.json'
 import { BallGlyph } from '@/components/ui/BallIcon'
 import { TIERS, type UserTier } from '@/lib/game/tier'
