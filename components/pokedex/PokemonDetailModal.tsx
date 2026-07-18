@@ -41,10 +41,11 @@ function formatWeight(weightHg: number | null): string {
   return weightHg == null ? PLACEHOLDER : `${(weightHg / 10).toFixed(1)}kg`;
 }
 
-function PokeballIcon() {
+// 위쪽 반원은 종족값 등급색으로 — 등급별로 몬스터/수퍼/하이퍼/마스터볼을 색으로 구분(bstBall)
+function PokeballIcon({ color }: { color: string }) {
   return (
     <div className="relative h-8 w-8 overflow-hidden rounded-full border-2 border-black bg-white">
-      <div className="h-1/2 w-full bg-[#e3350d]" />
+      <div className="h-1/2 w-full" style={{ backgroundColor: color }} />
       <div className="absolute top-1/2 left-0 h-1 w-full -translate-y-1/2 bg-black" />
       <div className="absolute top-1/2 left-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-black bg-white" />
     </div>
@@ -72,7 +73,7 @@ function DetailPanel({ panel }: { panel: Panel }) {
       {/* 최상단: 등급색 헤더(도감번호 + 볼 등급) + 스프라이트 + 이름/타입 */}
       <div className="overflow-hidden rounded-xl border-2 border-black bg-white shadow-[4px_4px_0_0_#000]">
         <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: ball.color }}>
-          <PokeballIcon />
+          <PokeballIcon color={ball.color} />
           <span className="text-xs font-bold text-white">{dexLabel(species.dex_no)}</span>
           <span className="ml-auto flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold">
             <span
