@@ -8,6 +8,8 @@ export type CatchAttemptSuccess = {
   attempts_left: number
   status: 'pending' | 'caught' | 'fled'
   catch_rate_tier: string
+  // 이번 포획으로 도가 100% 완공됐으면 그 도 이름, 아니면 null(PRD §8.4 결과 배너)
+  province_completed: string | null
 }
 
 export type CatchAttemptErrorCode =
