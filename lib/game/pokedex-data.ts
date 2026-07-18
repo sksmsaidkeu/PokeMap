@@ -19,11 +19,16 @@ type SpawnPoolRow = Pick<
 >;
 
 // 도감 화면 데이터 조립. 마스터 테이블은 일괄 조회 후 TS에서 도별로 묶는다(N+1 금지, CLAUDE.md §21).
-// 유저 데이터(user_pokedex / 진행률 뷰)는 로그인 유저가 없으면 RLS로 빈 결과가 나오므로,
-// 그 경우 전 카드 미포획 + 진행률 0/N으로 방어한다.
-export async function getPokedexProvinceGroups(): Promise<PokedexProvinceGroup[]> {
-  const supabase = await createClient();
-
+//
+// 호출자(page.tsx)가 auth.getUser()를 마친 클라이언트와 userId를 넘긴다 — 여기서 별도 클라이언트를
+// 새로 만들면 그 클라는 getUser()를 거치지 않아, 미들웨어가 없는 이 앱에선 만료된 액세스 토큰이
+// 갱신되지 않은 채 쿼리가 나가 auth.uid()가 풀리고 user_pokedex RLS가 0행을 반환한다(=포획했는데
+// 전부 미포획으로 표시). 유저 쿼리는 map 페이지와 동일하게 .eq("user_id")로도 명시 스코프한다.
+// userId가 없으면(프리뷰/비로그인) 유저 데이터 조회를 건너뛰어 전 카드 미포획 + 진행률 0/N.
+export async function getPokedexProvinceGroups(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string | null,
+): Promise<PokedexProvinceGroup[]> {
   const [provincesRes, livingAreasRes, spawnPoolRes, speciesRes, pokedexRes, progressRes] =
     await Promise.all([
       supabase.from("provinces").select("id,name,legendary_dex_no").order("id"),
@@ -34,8 +39,18 @@ export async function getPokedexProvinceGroups(): Promise<PokedexProvinceGroup[]
         .select(
           "dex_no,name_kr,type1,type2,bst,flavor_text,height_dm,weight_hg,primary_ability,evo_chain_id,evo_stage",
         ),
-      supabase.from("user_pokedex").select("dex_no,first_caught_at,catch_count"),
-      supabase.from("v_user_province_progress").select("province_id,caught_count,total_count,pct"),
+      userId
+        ? supabase
+            .from("user_pokedex")
+            .select("dex_no,first_caught_at,catch_count")
+            .eq("user_id", userId)
+        : Promise.resolve({ data: [] as PokedexEntryRow[] }),
+      userId
+        ? supabase
+            .from("v_user_province_progress")
+            .select("province_id,caught_count,total_count,pct")
+            .eq("user_id", userId)
+        : Promise.resolve({ data: [] as ProvinceProgressRow[] }),
     ]);
 
   const provinces: ProvinceRow[] = provincesRes.data ?? [];

@@ -25,7 +25,7 @@ export default async function PokedexPage({
 
   const [base, { count: caughtCount }, { count: totalSpecies }, profileRes, tierRes] =
     await Promise.all([
-      getPokedexProvinceGroups(),
+      getPokedexProvinceGroups(supabase, user?.id ?? null),
       // select_own RLS로 로그인 유저 행만 잡히므로 별도 user_id 필터 불필요
       supabase.from("user_pokedex").select("dex_no", { count: "exact", head: true }),
       supabase.from("pokemon_species").select("dex_no", { count: "exact", head: true }),
