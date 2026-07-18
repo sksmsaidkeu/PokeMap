@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from './Modal'
 import { BallIcon } from './BallIcon'
@@ -23,6 +23,9 @@ export type AppHeaderProps = {
 
 export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
   const router = useRouter()
+  // 지도 외 페이지(도감 등)에서만 좌측에 지도 복귀 버튼 노출 — 지도에선 이미 그곳이라 숨김
+  const pathname = usePathname()
+  const showBackToMap = pathname !== '/map'
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [editNicknameOpen, setEditNicknameOpen] = useState(false)
@@ -42,7 +45,32 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-end bg-white/80 px-3 py-2">
+    <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between bg-white/80 px-3 py-2">
+      {/* 좌: 지도 복귀(지도 페이지에선 빈 자리로 우측 정렬 유지) / 우: 플레이어·도감·설정 */}
+      {showBackToMap ? (
+        <button
+          type="button"
+          aria-label="지도로 돌아가기"
+          onClick={() => router.push('/map')}
+          className="flex h-11 items-center gap-1 rounded-full border-2 border-black bg-white px-3"
+        >
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5 text-black"
+          >
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          <span className="text-sm font-bold text-black">지도</span>
+        </button>
+      ) : (
+        <div />
+      )}
       <div className="flex items-center gap-2">
         {/* 플레이어 정보: 이름은 클릭 없는 인라인 표시(3차 검증), 등급 배지만 버튼화(4차 검증) —
             눌러서 각 등급 도달에 필요한 포획 수를 확인 */}

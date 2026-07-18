@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import EncounterClient from '@/components/encounter/EncounterClient'
+import { tierFromLabel } from '@/lib/game/tier'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -35,9 +36,12 @@ export default async function EncounterPage({
   }
 
   // 포획 가능성은 원시 %가 아닌 tier text만 서버에서 받아 내려보낸다(§13.1, CLAUDE.md §22)
-  const { data: tier } = await supabase.rpc('calc_session_catch_tier', {
-    p_session_id: sessionId,
-  })
+  // 상단 리본에 표시할 트레이너 이름/등급도 함께 조회(map/pokedex 헤더와 동일 패턴)
+  const [{ data: tier }, { data: profile }, { data: tierLabel }] = await Promise.all([
+    supabase.rpc('calc_session_catch_tier', { p_session_id: sessionId }),
+    supabase.from('profiles').select('nickname').eq('id', user.id).maybeSingle(),
+    supabase.rpc('calc_user_tier', { p_user_id: user.id }),
+  ])
   if (!tier) redirect('/map')
 
   const species = session.pokemon_species
@@ -53,6 +57,8 @@ export default async function EncounterPage({
       catchRateTier={tier}
       attemptsUsed={session.attempts_used}
       expiresAt={session.expires_at}
+      trainerName={profile?.nickname ?? user.email?.split('@')[0] ?? '트레이너'}
+      tier={tierFromLabel(tierLabel)}
     />
   )
 }

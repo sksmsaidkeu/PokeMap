@@ -367,10 +367,11 @@ CREATE POLICY no_direct_write ON user_pokedex FOR ALL USING (false) WITH CHECK (
 
 **`catch-attempt`**:
 1. `SELECT ... FOR UPDATE` on `encounter_sessions`
-2. `status='pending' AND expires_at > now()` 확인, `attempts_used < 3` 확인
+2. `status<>'pending'`이면 `SESSION_ALREADY_RESOLVED`(이미 caught/fled), `expires_at<=now()`면 `SESSION_EXPIRED` — 두 경우를 분리해 이미 확정된 세션 재시도를 "만료됨"으로 오도하지 않는다(E2E 리포트 B4). `attempts_used < 3` 확인
 3. 확률 판정(§6.2/6.3) → `catch_attempts` INSERT(`attempt_no = attempts_used + 1`), `encounter_sessions.attempts_used += 1`
 4. 트리거가 성공/3회 소진에 따라 `status` 확정
-5. 커밋
+5. 도 완성 배너(PRD §8.4): `v_user_province_progress.pct`를 INSERT 직전/직후로 스냅샷해 `<1.0 → >=1.0` 전환 && 그 도에 `legendary_dex_no` 존재 시 응답 `province_completed`에 도 이름 반환(아니면 null). 전설은 진행률 분모 제외(§16 뷰)라 전설 포획으론 전환 불가(마이그레이션 `20260730000000`)
+6. 커밋
 
 ## 11. Lock 전략
 

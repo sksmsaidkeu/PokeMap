@@ -9,6 +9,8 @@ import { animate, motion, useReducedMotion } from 'framer-motion'
 import { catchAttempt } from '@/lib/game/catchAttempt'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from '@/components/ui/Modal'
+import { BallIcon } from '@/components/ui/BallIcon'
+import { TIERS, type UserTier } from '@/lib/game/tier'
 import { encounterBackground } from '@/components/encounter/typeColors'
 import { PokemonSprite } from '@/components/pokedex/PokemonSprite'
 
@@ -22,6 +24,8 @@ export type EncounterClientProps = {
   catchRateTier: string
   attemptsUsed: number
   expiresAt: string
+  trainerName: string
+  tier: UserTier
 }
 
 type Phase = 'active' | 'caught' | 'fled'
@@ -47,12 +51,16 @@ export default function EncounterClient({
   catchRateTier,
   attemptsUsed,
   expiresAt,
+  trainerName,
+  tier,
 }: EncounterClientProps) {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>('active')
   const [attemptsLeft, setAttemptsLeft] = useState(3 - attemptsUsed)
   const [pending, setPending] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  // 이번 포획으로 도 100% 완공 시 그 도 이름(PRD §8.4 배너)
+  const [provinceCompleted, setProvinceCompleted] = useState<string | null>(null)
   const [missed, setMissed] = useState(false)
   // 이미지 로딩 실패 시 기존 원형/텍스트 placeholder로 폴백
   const [spriteError, setSpriteError] = useState(false)
@@ -214,8 +222,14 @@ export default function EncounterClient({
     setPending(false)
 
     if (error) {
-      // 만료/소진은 서버 판정이 곧 결과 — 클라이언트가 결과를 추정하지 않는다
-      if (error.code === 'SESSION_EXPIRED' || error.code === 'NO_ATTEMPTS_LEFT') {
+      // 만료/소진/세션소실은 서버 판정이 곧 결과 — 클라이언트가 결과를 추정하지 않는다
+      // SESSION_NOT_FOUND를 errorMessage로만 두면 phase가 active로 남아 포획 버튼이 죽은 세션에 계속 눌려버린다(B1)
+      if (
+        error.code === 'SESSION_EXPIRED' ||
+        error.code === 'NO_ATTEMPTS_LEFT' ||
+        error.code === 'SESSION_NOT_FOUND' ||
+        error.code === 'SESSION_ALREADY_RESOLVED'
+      ) {
         setPhase('fled')
       } else {
         setErrorMessage(error.message)
@@ -227,6 +241,7 @@ export default function EncounterClient({
     setAttemptsLeft(data.attempts_left)
     if (data.status === 'caught') {
       setPhase('caught')
+      setProvinceCompleted(data.province_completed)
       // RLS select_own으로 본인 행만 조회 가능 — catch_count 1이면 신규(NEW!)
       const { data: row } = await createClient()
         .from('user_pokedex')
@@ -234,7 +249,8 @@ export default function EncounterClient({
         .eq('dex_no', dexNo)
         .maybeSingle()
       setCatchCount(row?.catch_count ?? null)
-    } else if (data.status === 'fled') {
+    } else if (data.status === 'fled' || data.attempts_left <= 0) {
+      // 서버가 status:'fled' 없이 pending+attempts_left:0만 주는 경우도 소진=도망으로 처리(B2) — 2분 타이머까지 안 갇히게
       setPhase('fled')
     } else {
       setMissed(true)
@@ -351,7 +367,7 @@ export default function EncounterClient({
         </>
       )}
 
-      {/* 상단: 좌 포획 가능성 태그 / 우 Player UI 리본 */}
+      {/* 상단: 좌 포획 가능성 태그 / 우 플레이어(등급 배지 + 트레이너 이름) 리본 */}
       <div className="flex w-full max-w-md items-start justify-between">
         <span
           className={`rounded-full border-2 border-black bg-white px-3 py-1 text-sm font-bold text-black`}
@@ -359,14 +375,15 @@ export default function EncounterClient({
           {isLegendary ? '전설 · ' : ''}포획 가능성: {catchRateTier}
         </span>
         <span
-          className="border-2 border-black bg-white px-3 py-1 text-xs font-bold text-black"
+          className="flex items-center gap-1.5 border-2 border-black bg-white px-3 py-1 text-xs font-bold text-black"
           style={{
             clipPath:
               'polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 50%)',
             paddingLeft: '18px',
           }}
         >
-          Player UI
+          <BallIcon topColor={TIERS[tier].topColor} size={18} label={TIERS[tier].label} />
+          <span className="max-w-[8rem] truncate">{trainerName}</span>
         </span>
       </div>
 
@@ -463,7 +480,14 @@ export default function EncounterClient({
               {catchCount !== null && catchCount > 1 && (
                 <p className="text-sm text-black/70">누적 {catchCount}회째 포획</p>
               )}
-              {/* TODO: 도 100% 달성 배너(PRD §8.4) — 판정 데이터가 응답에 없어 이번 슬라이스 스킵 */}
+              {provinceCompleted && (
+                <div
+                  role="status"
+                  className="mt-1 rounded-lg border-2 border-black bg-yellow-300 px-3 py-2 text-sm font-extrabold text-black"
+                >
+                  ✨ {provinceCompleted} 도감 완성! 전설이 나타났다
+                </div>
+              )}
             </>
           ) : (
             <p className="text-lg font-extrabold">{revealed ? nameKr : '???'}은(는) 도망쳤다...</p>
