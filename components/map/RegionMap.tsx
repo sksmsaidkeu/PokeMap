@@ -40,17 +40,10 @@ export interface RegionMapProps {
   onLabelClick?: (cityId: number) => void // "이동"(화살표)과 구분되는 "정보 보기" — 실제 동작은 이 스코프 밖
 }
 
-// 독도 등 symbolic 항목은 real_geometry 없이 real_point만 갖는다(원본 데이터 주석 참고)
-interface RawHidden { color: string; real_geometry?: Geometry; real_point?: [number, number] }
-interface RawMap { main_map_bounds: Bounds; hidden_areas: RawHidden[] }
+interface RawMap { main_map_bounds: Bounds }
 
 const map = rawMap as unknown as RawMap
 const PROJ = createProjection(map.main_map_bounds, 1000)
-
-// 폴리곤 없는 symbolic 지역(독도)은 실좌표에 점으로 표시(시군구 데이터엔 독도가 별도 항목이 없음)
-const SYMBOLIC_DOTS: { color: string; p: Point }[] = map.hidden_areas
-  .filter((h) => h.real_geometry == null && h.real_point != null)
-  .map((h) => ({ color: h.color, p: PROJ.project(h.real_point![0], h.real_point![1]) }))
 
 // ZOOM = viewBox가 차지하는 전체 지도 대비 비율 — 작을수록 화면에 더 크게(세부적으로) 보임(확대).
 // plan.md #1: 시각 배율만 확장, city_connections 인접 관계는 그대로.
@@ -212,12 +205,6 @@ export default function RegionMap({
     >
       {/* 채우기: 시군구 폴리곤을 도별 대표색으로(채우기·경계 동일 데이터셋 → 정렬 어긋남 없음, 6차 검증) */}
       <CityFills />
-      {/* 독도 등 점 표시(시군구 데이터에 없는 symbolic 지역) */}
-      <g pointerEvents="none">
-        {SYMBOLIC_DOTS.map((s, i) => (
-          <circle key={i} cx={s.p.x} cy={s.p.y} r={view.markerR * 1.4} fill={s.color} />
-        ))}
-      </g>
       {/* 시군구 경계선 하나로 통일(굵은 도 경계 레이어 제거, 3차 검증). 도 구분은 채우기 색 + 경계선 */}
       <CityBorders />
       {/* 시 이름 라벨(흰 글씨 + 검은 테두리) — 경계 위, 마커 아래 */}
@@ -285,7 +272,7 @@ function Label({
 }) {
   // ponytail: 0.6은 한글 글자폭 근사치(실측 대신 고정 계수) — 실제 폰트 기준 재보정 필요해지면 조정
   const clampWidth = name.length > MAX_LABEL_CHARS ? fontSize * MAX_LABEL_CHARS * 0.6 : undefined
-  return (
+  const text = (
     <text
       x={x}
       y={y}
@@ -297,24 +284,36 @@ function Label({
       paintOrder="stroke"
       textLength={clampWidth}
       lengthAdjust={clampWidth ? 'spacingAndGlyphs' : undefined}
-      style={{ userSelect: 'none', cursor: onClick ? 'pointer' : undefined }}
-      role={onClick ? 'button' : undefined}
-      aria-label={onClick ? `${name} 정보 보기` : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                onClick()
-              }
-            }
-          : undefined
-      }
+      style={{ userSelect: 'none' }}
+      pointerEvents="none"
     >
       {name}
     </text>
+  )
+  if (!onClick) return text
+
+  // 글리프 박스만으로는 폰에서 탭 타깃이 24px 미만 → 화살표의 hitR 투명 원과 같은 패턴으로
+  // 투명 rect를 덧대 클릭 영역만 확대(시각 변화 없음). 세로 fontSize*1.8 ≈ 24px 이상 확보.
+  const textWidth = clampWidth ?? name.length * fontSize * 0.6
+  const hitW = Math.max(textWidth, fontSize) + fontSize * 1.2
+  const hitH = fontSize * 1.8
+  return (
+    <g
+      role="button"
+      aria-label={`${name} 정보 보기`}
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+    >
+      <rect x={x - hitW / 2} y={y - hitH / 2} width={hitW} height={hitH} fill="transparent" />
+      {text}
+    </g>
   )
 }
 

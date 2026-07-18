@@ -260,7 +260,7 @@ export default function LoginForm() {
           aria-selected={mode === 'signin'}
           onClick={() => switchMode('signin')}
           className={`min-h-11 flex-1 rounded-full text-sm font-bold transition ${
-            mode === 'signin' ? 'bg-[#e3350d] text-white' : 'text-black'
+            mode === 'signin' ? 'bg-retro-red text-white' : 'text-black'
           }`}
         >
           로그인
@@ -271,7 +271,7 @@ export default function LoginForm() {
           aria-selected={mode === 'signup'}
           onClick={() => switchMode('signup')}
           className={`min-h-11 flex-1 rounded-full text-sm font-bold transition ${
-            mode === 'signup' ? 'bg-[#e3350d] text-white' : 'text-black'
+            mode === 'signup' ? 'bg-retro-red text-white' : 'text-black'
           }`}
         >
           회원가입
@@ -319,12 +319,12 @@ export default function LoginForm() {
       </div>
 
       {mode === 'signin' && (
-        <label className="flex items-center gap-2 text-sm font-medium">
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
           <input
             type="checkbox"
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
-            className="h-4 w-4 accent-[#e3350d]"
+            className="h-5 w-5 accent-[#e3350d]"
           />
           로그인 기억하기
         </label>
@@ -414,7 +414,7 @@ export default function LoginForm() {
           type="button"
           onClick={handleManualConfirm}
           disabled={loading}
-          className="min-h-11 w-full rounded-full border-2 border-black bg-[#e3350d] text-base font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 w-full rounded-full border-2 border-black bg-retro-red text-base font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? '잠시만요…' : '이 지역에서 시작하기'}
         </button>
@@ -422,7 +422,7 @@ export default function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="min-h-11 w-full rounded-full border-2 border-black bg-[#e3350d] text-base font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 w-full rounded-full border-2 border-black bg-retro-red text-base font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? '잠시만요…' : mode === 'signup' ? '모험 시작하기' : '로그인'}
         </button>

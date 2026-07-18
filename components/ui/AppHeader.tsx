@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Modal } from './Modal'
@@ -27,17 +27,60 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [editNicknameOpen, setEditNicknameOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
   const [tierInfoOpen, setTierInfoOpen] = useState(false)
+
+  const menuRef = useRef<HTMLDivElement>(null)
+  const settingsBtnRef = useRef<HTMLButtonElement>(null)
 
   const { label } = TIERS[tier]
 
+  // 메뉴 열림 시: 첫 항목에 포커스 + 바깥 클릭(pointerdown)으로 닫기.
+  useEffect(() => {
+    if (!menuOpen) return
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node
+      if (menuRef.current?.contains(target) || settingsBtnRef.current?.contains(target)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [menuOpen])
+
+  function handleMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
+    if (items.length === 0) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setMenuOpen(false)
+      settingsBtnRef.current?.focus()
+      return
+    }
+    const idx = items.indexOf(document.activeElement as HTMLElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length].focus()
+    }
+  }
+
+  function closeConfirm() {
+    setConfirmOpen(false)
+    setSignOutError(null)
+  }
+
   async function handleLogout() {
     setSigningOut(true)
+    setSignOutError(null)
     try {
       await createClient().auth.signOut()
       router.replace('/login')
     } catch {
       setSigningOut(false)
+      setSignOutError('로그아웃에 실패했어요. 잠시 후 다시 시도해 주세요.')
     }
   }
 
@@ -50,7 +93,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
           <button
             type="button"
             aria-label="등급표 보기"
-            aria-expanded={tierInfoOpen}
+            aria-haspopup="dialog"
             onClick={() => setTierInfoOpen(true)}
             className="flex flex-col items-center"
           >
@@ -83,8 +126,10 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
 
         <div className="relative">
           <button
+            ref={settingsBtnRef}
             type="button"
             aria-label="설정"
+            aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-black bg-white"
@@ -105,7 +150,9 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
           </button>
           {menuOpen && (
             <div
+              ref={menuRef}
               role="menu"
+              onKeyDown={handleMenuKeyDown}
               className="absolute right-0 mt-1 w-32 rounded-xl border-2 border-black bg-white p-1"
             >
               <button
@@ -135,22 +182,27 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
         </div>
       </div>
 
-      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+      <Modal open={confirmOpen} onClose={closeConfirm} ariaLabel="로그아웃 확인">
         <p className="text-center text-sm font-bold text-black">
           정말 로그아웃 하실건가요 트레이너님?
         </p>
+        {signOutError && (
+          <p role="alert" className="mt-2 text-center text-xs font-bold text-retro-red">
+            {signOutError}
+          </p>
+        )}
         <div className="mt-4 flex gap-2">
           <button
             type="button"
             disabled={signingOut}
             onClick={handleLogout}
-            className="flex-1 rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+            className="flex-1 rounded-xl bg-retro-red px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
           >
             확인
           </button>
           <button
             type="button"
-            onClick={() => setConfirmOpen(false)}
+            onClick={closeConfirm}
             className="flex-1 rounded-xl border-2 border-black bg-white px-3 py-2 text-sm font-bold text-black"
           >
             취소
@@ -158,7 +210,7 @@ export function AppHeader({ trainerName, tier, totalSpecies }: AppHeaderProps) {
         </div>
       </Modal>
 
-      <Modal open={tierInfoOpen} onClose={() => setTierInfoOpen(false)}>
+      <Modal open={tierInfoOpen} onClose={() => setTierInfoOpen(false)} ariaLabel="등급별 도달 포획 수">
         <p className="mb-3 text-center text-sm font-extrabold text-black">등급별 도달 포획 수</p>
         <ul className="space-y-2">
           {TIER_ORDER.map((t) => {

@@ -160,6 +160,8 @@ export default async function MapPage() {
         .select('centroid, living_areas!inner(province_id)')
         .eq('is_legendary_site', true)
         .eq('living_areas.province_id', currentProvinceId)
+        // 도당 전설 출현지는 단일 불변식이나, >1 row가 새면 maybeSingle이 request-time throw → limit(1)로 방어
+        .limit(1)
         .maybeSingle(),
       supabase.rpc('calc_user_tier', { p_user_id: user.id }),
       // 헤더의 등급표 팝업(등급별 필요 포획 수 계산용)

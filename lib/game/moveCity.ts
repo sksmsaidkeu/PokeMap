@@ -19,7 +19,9 @@ export type MoveCityErrorCode =
   | 'NOT_ADJACENT'
   | 'REGION_LOCKED'
   | 'LEGENDARY_COOLDOWN'
+  | 'NO_PROGRESS'
   | 'INVALID_INPUT'
+  | 'INTERNAL'
 
 export type MoveCityResult = EdgeFunctionResult<MoveCitySuccess, MoveCityErrorCode>
 export type MoveCityError = EdgeFunctionError<MoveCityErrorCode>

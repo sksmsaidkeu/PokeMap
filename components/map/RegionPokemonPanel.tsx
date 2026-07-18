@@ -94,7 +94,7 @@ function RegionPokemonItem({ entry }: { entry: RegionSpawnStatusEntry }) {
       <div className="relative flex aspect-square w-full items-center justify-center rounded-lg bg-zinc-50">
         <PokemonSprite dexNo={entry.dex_no ?? 0} alt={name} silhouette={!caught} />
         {entry.is_legendary && (
-          <span className="absolute right-1 top-1 rounded bg-[#e3350d] px-1 text-[9px] font-bold text-white">
+          <span className="absolute right-1 top-1 rounded bg-retro-red px-1 text-[9px] font-bold text-white">
             전설
           </span>
         )}

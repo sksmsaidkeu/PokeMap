@@ -289,7 +289,12 @@ export default function EncounterClient({
       transition={{ duration: 0.3, ease: 'easeInOut' }}
       // fade는 reduced-motion에서도 유지(PRD §22) — 완료 후에만 라우팅
       onAnimationComplete={() => {
-        if (leaving) router.push('/map')
+        if (leaving) {
+          router.push('/map')
+          // 포획은 서버 판정 mutation(도 진행도·전설 출현지 노출·등급) — RSC 캐시가 조우 진입 이전 /map을
+          // 재사용해 스테일해지므로 caught/fled 공통 복귀 경로에서 강제 무효화(MapContainer.tsx:91과 동일 패턴)
+          router.refresh()
+        }
       }}
       className="relative flex min-h-screen flex-col items-center overflow-hidden px-4 py-6"
     >
