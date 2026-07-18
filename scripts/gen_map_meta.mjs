@@ -11,7 +11,9 @@ import { dirname, join } from 'node:path'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const src = JSON.parse(readFileSync(join(root, 'files/korea_map_data.min.json'), 'utf8'))
 
-const meta = { main_map_bounds: src.main_map_bounds, hidden_areas: src.hidden_areas }
+// RegionMap은 hidden_areas의 real_geometry를 읽지 않는다(real_point만) → 폴리곤 strip(~40KB 절감)
+const hidden_areas = src.hidden_areas.map(({ real_geometry, ...rest }) => rest)
+const meta = { main_map_bounds: src.main_map_bounds, hidden_areas }
 const out = join(root, 'files/korea_map_meta.min.json')
 writeFileSync(out, JSON.stringify(meta))
 

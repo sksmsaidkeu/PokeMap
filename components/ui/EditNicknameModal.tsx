@@ -39,7 +39,7 @@ export function EditNicknameModal({ open, onClose, currentNickname }: EditNickna
   }
 
   return (
-    <Modal open={open} onClose={handleClose}>
+    <Modal open={open} onClose={handleClose} ariaLabel="닉네임 변경">
       <p className="text-center text-sm font-bold text-black">닉네임 변경</p>
       <input
         type="text"
@@ -55,7 +55,7 @@ export function EditNicknameModal({ open, onClose, currentNickname }: EditNickna
           type="button"
           disabled={saving}
           onClick={handleSave}
-          className="flex-1 rounded-xl bg-red-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+          className="flex-1 rounded-xl bg-retro-red px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
         >
           저장
         </button>
